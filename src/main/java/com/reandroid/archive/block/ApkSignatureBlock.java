@@ -15,20 +15,20 @@
  */
 package com.reandroid.archive.block;
 
-
 import com.reandroid.archive.block.pad.SchemePadding;
 import com.reandroid.arsc.io.BlockReader;
+import com.reandroid.utils.collection.ArrayCollection;
+import com.reandroid.utils.collection.IterableIterator;
+import com.reandroid.utils.io.FileUtil;
 
-import java.io.File;
-import java.io.FileFilter;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.util.ArrayList;
+import java.io.*;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 
 public class ApkSignatureBlock extends LengthPrefixedList<SignatureInfo>
         implements Comparator<SignatureInfo> {
+
     public ApkSignatureBlock(SignatureFooter signatureFooter){
         super(true);
         setBottomBlock(signatureFooter);
@@ -36,11 +36,14 @@ public class ApkSignatureBlock extends LengthPrefixedList<SignatureInfo>
     public ApkSignatureBlock(){
         this(new SignatureFooter());
     }
-    public List<SignatureInfo> getSignatures(){
-        return super.getElements();
-    }
-    public int countSignatures(){
-        return super.getElementsCount();
+
+    public Iterator<CertificateBlock> getCertificates() {
+        return new IterableIterator<SignatureInfo, CertificateBlock>(this.iterator()) {
+            @Override
+            public Iterator<CertificateBlock> iterator(SignatureInfo element) {
+                return element.getCertificates();
+            }
+        };
     }
     public void sortSignatures(){
         sort(this);
@@ -72,7 +75,7 @@ public class ApkSignatureBlock extends LengthPrefixedList<SignatureInfo>
         return (SchemePadding) scheme;
     }
     public SignatureInfo getSignature(SignatureId signatureId){
-        for(SignatureInfo signatureInfo:getSignatures()){
+        for(SignatureInfo signatureInfo : this){
             if(signatureInfo.getId().equals(signatureId)){
                 return signatureInfo;
             }
@@ -96,19 +99,14 @@ public class ApkSignatureBlock extends LengthPrefixedList<SignatureInfo>
 
     public void writeRaw(File file) throws IOException{
         refresh();
-        File dir = file.getParentFile();
-        if(dir != null && !dir.exists()){
-            dir.mkdirs();
-        }
-        FileOutputStream outputStream = new FileOutputStream(file);
+        OutputStream outputStream = FileUtil.outputStream(file);
         writeBytes(outputStream);
         outputStream.close();
     }
     public List<File> writeSplitRawToDirectory(File dir) throws IOException{
         refresh();
-        List<SignatureInfo> signatureInfoList = getElements();
-        List<File> writtenFiles = new ArrayList<>(signatureInfoList.size());
-        for(SignatureInfo signatureInfo:signatureInfoList){
+        List<File> writtenFiles = new ArrayCollection<>(size());
+        for(SignatureInfo signatureInfo : this){
             File file = signatureInfo.writeRawToDirectory(dir);
             writtenFiles.add(file);
         }

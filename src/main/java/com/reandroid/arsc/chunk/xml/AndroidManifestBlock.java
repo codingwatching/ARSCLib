@@ -15,20 +15,24 @@
  */
 package com.reandroid.arsc.chunk.xml;
 
+import com.reandroid.app.AndroidManifest;
 import com.reandroid.arsc.ApkFile;
 import com.reandroid.arsc.chunk.PackageBlock;
 import com.reandroid.arsc.chunk.TableBlock;
 import com.reandroid.arsc.io.BlockReader;
 import com.reandroid.arsc.model.ResourceEntry;
 import com.reandroid.arsc.value.ValueType;
+import com.reandroid.utils.ObjectsUtil;
+import com.reandroid.utils.collection.*;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 
-public class AndroidManifestBlock extends ResXmlDocument {
+@SuppressWarnings("unused")
+public class AndroidManifestBlock extends ResXmlDocument implements AndroidManifest {
     private int mGuessedPackageId;
     public AndroidManifestBlock(){
         super();
@@ -116,19 +120,36 @@ public class AndroidManifestBlock extends ResXmlDocument {
     }
     public int getIconResourceId(){
         ResXmlElement applicationElement = getApplicationElement();
-        if(applicationElement==null){
+        if(applicationElement == null){
             return 0;
         }
-        ResXmlAttribute iconAttribute=applicationElement.searchAttributeByResourceId(ID_icon);
-        if(iconAttribute==null || iconAttribute.getValueType() != ValueType.REFERENCE){
+        ResXmlAttribute attribute = applicationElement.searchAttributeByResourceId(ID_icon);
+        if(attribute == null || attribute.getValueType() != ValueType.REFERENCE){
             return 0;
         }
-        return iconAttribute.getData();
+        return attribute.getData();
     }
     public void setIconResourceId(int resourceId){
         ResXmlElement applicationElement = getOrCreateApplicationElement();
         ResXmlAttribute iconAttribute =
                 applicationElement.getOrCreateAndroidAttribute(NAME_icon, ID_icon);
+        iconAttribute.setTypeAndData(ValueType.REFERENCE, resourceId);
+    }
+    public int getRoundIconResourceId(){
+        ResXmlElement applicationElement = getApplicationElement();
+        if(applicationElement == null){
+            return 0;
+        }
+        ResXmlAttribute attribute = applicationElement.searchAttributeByResourceId(ID_roundIcon);
+        if(attribute == null || attribute.getValueType() != ValueType.REFERENCE){
+            return 0;
+        }
+        return attribute.getData();
+    }
+    public void setRoundIconResourceId(int resourceId){
+        ResXmlElement applicationElement = getOrCreateApplicationElement();
+        ResXmlAttribute iconAttribute =
+                applicationElement.getOrCreateAndroidAttribute(NAME_icon, ID_roundIcon);
         iconAttribute.setTypeAndData(ValueType.REFERENCE, resourceId);
     }
     public Integer getApplicationLabelReference(){
@@ -195,17 +216,20 @@ public class AndroidManifestBlock extends ResXmlDocument {
             application.removeAttribute(attribute);
         }
     }
-    public ResXmlElement getMainActivity(){
-        for(ResXmlElement activity:listActivities()){
-            for(ResXmlElement intentFilter:activity.listElements(TAG_intent_filter)){
-                for(ResXmlElement action:intentFilter.listElements(TAG_action)){
-                    ResXmlAttribute attribute = action.searchAttributeByResourceId(ID_name);
-                    if(attribute==null){
-                        continue;
-                    }
-                    if(VALUE_android_intent_action_MAIN.equals(attribute.getValueAsString())){
-                        return activity;
-                    }
+    public ResXmlElement getMainActivity() {
+        Iterator<ResXmlElement> iterator = getActivities(true);
+        while (iterator.hasNext()) {
+            ResXmlElement activity = iterator.next();
+            Iterator<ResXmlElement> actions = activity
+                    .getElementsWithChild(TAG_intent_filter, TAG_action);
+            while (actions.hasNext()) {
+                ResXmlElement action = actions.next();
+                ResXmlAttribute attribute = action.searchAttributeByResourceId(ID_name);
+                if (attribute == null) {
+                    continue;
+                }
+                if(VALUE_android_intent_action_MAIN.equals(attribute.getValueAsString())){
+                    return activity;
                 }
             }
         }
@@ -215,15 +239,15 @@ public class AndroidManifestBlock extends ResXmlDocument {
         ResXmlElement activity = getMainActivity();
         if(activity == null){
             ResXmlElement application = getOrCreateApplicationElement();
-            activity = application.createChildElement(TAG_activity);
-            ResXmlElement intentFilter = activity.createChildElement(TAG_intent_filter);
-            ResXmlElement action = intentFilter.createChildElement(TAG_action);
+            activity = application.newElementAt(0, TAG_activity);
+            ResXmlElement intentFilter = activity.newElement(TAG_intent_filter);
+            ResXmlElement action = intentFilter.newElement(TAG_action);
             ResXmlAttribute attribute = action.getOrCreateAndroidAttribute(NAME_name, ID_name);
             attribute.setValueAsString(VALUE_android_intent_action_MAIN);
-            ResXmlElement category = intentFilter.createChildElement(TAG_category);
+            ResXmlElement category = intentFilter.newElement(TAG_category);
             attribute = category.getOrCreateAndroidAttribute(NAME_name, ID_name);
             attribute.setValueAsString("android.intent.category.DEFAULT");
-            category = intentFilter.createChildElement(TAG_category);
+            category = intentFilter.newElement(TAG_category);
             attribute = category.getOrCreateAndroidAttribute(NAME_name, ID_name);
             attribute.setValueAsString("android.intent.category.LAUNCHER");
         }
@@ -235,84 +259,69 @@ public class AndroidManifestBlock extends ResXmlDocument {
         ResXmlElement activity = getActivity(name, activityAlias);
         if(activity == null){
             ResXmlElement application = getOrCreateApplicationElement();
-            activity = application.createChildElement(
+            activity = application.newElement(
                     activityAlias? TAG_activity_alias : TAG_activity);
             ResXmlAttribute attribute = activity
-                    .createAndroidAttribute(NAME_name, ID_name);
+                    .createAndroidAttribute(AndroidManifest.NAME_name, ID_name);
             attribute.setValueAsString(name);
         }
         return activity;
     }
     public ResXmlElement getActivity(String name, boolean activityAlias){
         name = fullClassName(name);
-        for(ResXmlElement element : listActivities(activityAlias)){
-            ResXmlAttribute attribute = element.searchAttributeByResourceId(ID_name);
-            if(attribute == null){
-                continue;
-            }
-            if(name.equals(fullClassName(attribute.getValueAsString()))){
+        Iterator<ResXmlElement> iterator = getActivities(true);
+        while(iterator.hasNext()) {
+            ResXmlElement element = iterator.next();
+            if (ObjectsUtil.equals(name, getAndroidNameValue(element))) {
                 return element;
             }
         }
         return null;
     }
+    @Deprecated
     public List<ResXmlElement> listActivities(){
-        return listActivities(true);
-    }
-    public List<ResXmlElement> listActivities(boolean includeActivityAlias){
-        ResXmlElement application=getApplicationElement();
-        if(application==null){
-            return new ArrayList<>();
-        }
-        List<ResXmlElement> results = application.listElements(TAG_activity);
-        if(includeActivityAlias){
-            results.addAll(application.listElements(TAG_activity_alias));
-        }
+        ArrayCollection<ResXmlElement> results = new ArrayCollection<>();
+        results.addAll(getActivities(true));
         return results;
+    }
+    @Deprecated
+    public List<ResXmlElement> listActivities(boolean includeActivityAlias){
+        ArrayCollection<ResXmlElement> results = new ArrayCollection<>();
+        results.addAll(getActivities(includeActivityAlias));
+        return results;
+    }
+    public Iterator<ResXmlElement> getActivities(boolean includeAlias) {
+        Iterator<ResXmlElement> iterator = getElementsWithChild(
+                TAG_manifest,
+                TAG_application,
+                TAG_activity);
+        if (!includeAlias) {
+            return iterator;
+        }
+        return CombiningIterator.two(iterator, getElementsWithChild(
+                TAG_manifest,
+                TAG_application,
+                TAG_activity_alias));
     }
     public List<ResXmlElement> listApplicationElementsByTag(String tag){
-        ResXmlElement application=getApplicationElement();
-        if(application==null){
-            return new ArrayList<>();
-        }
-        return application.listElements(tag);
+        return CollectionUtil.toList(getApplicationElementsByTag(tag));
     }
-    public List<String> getUsesPermissions(){
-        List<String> results=new ArrayList<>();
-        ResXmlElement manifestElement=getManifestElement();
-        if(manifestElement==null){
-            return results;
-        }
-        List<ResXmlElement> permissionList = manifestElement.listElements(TAG_uses_permission);
-        for(ResXmlElement permission:permissionList){
-            ResXmlAttribute nameAttr = permission.searchAttributeByResourceId(ID_name);
-            if(nameAttr==null||nameAttr.getValueType()!=ValueType.STRING){
-                continue;
-            }
-            String val=nameAttr.getValueAsString();
-            if(val!=null){
-                results.add(val);
-            }
-        }
-        return results;
+    public Iterator<ResXmlElement> getApplicationElementsByTag(String tag){
+        return getElementsWithChild(TAG_manifest, TAG_application, tag);
+    }
+    public List<String> getUsesPermissions() {
+        Iterator<String> iterator = ComputeIterator.of(
+                getElementsWithChild(TAG_manifest, TAG_uses_permission),
+                AndroidManifestBlock::getAndroidNameValue
+        );
+        return CollectionUtil.toList(iterator);
     }
     public ResXmlElement getUsesPermission(String permissionName){
-        ResXmlElement manifestElement=getManifestElement();
-        if(manifestElement==null){
-            return null;
-        }
-        List<ResXmlElement> permissionList = manifestElement.listElements(TAG_uses_permission);
-        for(ResXmlElement permission:permissionList){
-            ResXmlAttribute nameAttr = permission.searchAttributeByResourceId(ID_name);
-            if(nameAttr==null || nameAttr.getValueType()!=ValueType.STRING){
-                continue;
-            }
-            String val=nameAttr.getValueAsString();
-            if(val==null){
-                continue;
-            }
-            if(val.equals(permissionName)){
-                return permission;
+        Iterator<ResXmlElement> iterator = getElementsWithChild(TAG_manifest, TAG_uses_permission);
+        while (iterator.hasNext()) {
+            ResXmlElement element = iterator.next();
+            if (ObjectsUtil.equals(permissionName, getAndroidNameValue(element))) {
+                return element;
             }
         }
         return null;
@@ -328,12 +337,13 @@ public class AndroidManifestBlock extends ResXmlDocument {
         }
         int i = manifestElement.lastIndexOf(TAG_uses_permission);
         i++;
-        ResXmlElement result = manifestElement.createChildElement(TAG_uses_permission);
-        ResXmlAttribute attr = result.getOrCreateAndroidAttribute(NAME_name, ID_name);
+        ResXmlElement result = manifestElement.newElement(TAG_uses_permission);
+        ResXmlAttribute attr = result.getOrCreateAndroidAttribute(AndroidManifest.NAME_name, ID_name);
         attr.setValueAsString(permissionName);
-        manifestElement.changeIndex(result, i);
+        manifestElement.moveTo(result, i);
         return result;
     }
+    @Override
     public String getPackageName(){
         ResXmlElement manifest=getManifestElement();
         if(manifest==null){
@@ -345,14 +355,65 @@ public class AndroidManifestBlock extends ResXmlDocument {
         }
         return attribute.getValueAsString();
     }
+
+    @Override
     public void setPackageName(String packageName){
         ResXmlElement manifestElement = getOrCreateManifestElement();
         ResXmlAttribute attribute = manifestElement.getOrCreateAttribute(NAME_PACKAGE, 0);
-        if(attribute == null){
-            return;
-        }
         attribute.setValueAsString(packageName);
     }
+    @Override
+    public String getApplicationClassName(){
+        ResXmlElement applicationElement = getApplicationElement();
+        if(applicationElement != null){
+            ResXmlAttribute attribute = applicationElement
+                    .searchAttributeByResourceId(ID_name);
+            if(attribute != null){
+                return fullClassName(attribute.getValueAsString());
+            }
+        }
+        return null;
+    }
+    @Override
+    public void setApplicationClassName(String className){
+        ResXmlAttribute attribute = getOrCreateApplicationElement()
+                .getOrCreateAndroidAttribute(AndroidManifest.NAME_name, ID_name);
+        attribute.setValueAsString(className);
+    }
+    @Override
+    public String getMainActivityClassName(){
+        ResXmlElement mainActivity = getMainActivity();
+        if(mainActivity != null){
+            ResXmlAttribute attribute = mainActivity
+                    .searchAttributeByResourceId(ID_name);
+            if(attribute != null){
+                return fullClassName(attribute.getValueAsString());
+            }
+        }
+        return null;
+    }
+    @Override
+    public void setMainActivityClassName(String className){
+        getOrCreateMainActivity(className);
+    }
+
+    @Override
+    public Integer getVersionCode(){
+        return getManifestAttributeInt(ID_versionCode);
+    }
+    @Override
+    public void setVersionCode(int version){
+        setManifestAttributeInt(NAME_versionCode, ID_versionCode, version);
+    }
+    @Override
+    public String getVersionName(){
+        return getManifestAttributeString(ID_versionName);
+    }
+    @Override
+    public void setVersionName(String versionName){
+        setManifestAttributeString(NAME_versionName,  ID_versionName, versionName);
+    }
+    @Override
     public Integer getPlatformBuildVersionCode(){
         ResXmlElement manifest = getManifestElement();
         if(manifest == null){
@@ -364,10 +425,12 @@ public class AndroidManifestBlock extends ResXmlDocument {
         }
         return attribute.getData();
     }
-    public void setPlatformBuildVersionCode(int buildVersionCode){
-        setManifestAttributeInt(NAME_platformBuildVersionCode, 0, buildVersionCode);
+    @Override
+    public void setPlatformBuildVersionCode(int version){
+        setManifestAttributeInt(NAME_platformBuildVersionCode, 0, version);
     }
-    public String getPlatformBuildVersionName(){
+    @Override
+    public Object getPlatformBuildVersionName(){
         ResXmlElement manifest = getManifestElement();
         if(manifest == null){
             return null;
@@ -376,17 +439,61 @@ public class AndroidManifestBlock extends ResXmlDocument {
         if(attribute == null ){
             return null;
         }
-        return attribute.getValueAsString();
+        if(attribute.getValueType() == ValueType.STRING){
+            return attribute.getValueAsString();
+        }
+        return attribute.getData();
     }
-    public void setPlatformBuildVersionName(String buildVersionName){
-        setManifestAttributeString(NAME_platformBuildVersionName, 0, buildVersionName);
+    @Override
+    public void setPlatformBuildVersionName(Object name){
+        Integer versionNumber = null;
+        if(name instanceof Integer){
+            versionNumber = (Integer) name;
+        }else {
+            try{
+                versionNumber = Integer.parseInt((String) name);
+            }catch (NumberFormatException ignored){
+            }
+        }
+        if(versionNumber != null){
+            setManifestAttributeInt(NAME_platformBuildVersionName, 0, versionNumber);
+        }else{
+            setManifestAttributeString(NAME_platformBuildVersionName, 0, (String) name);
+        }
     }
+    @Override
+    public Integer getMinSdkVersion(){
+        ResXmlElement manifest = getManifestElement();
+        if(manifest==null){
+            return null;
+        }
+        ResXmlElement usesSdk = manifest.getElement(TAG_uses_sdk);
+        if(usesSdk==null){
+            return null;
+        }
+        ResXmlAttribute attribute = usesSdk.searchAttributeByResourceId(ID_minSdkVersion);
+        if(attribute==null || attribute.getValueType()!=ValueType.DEC){
+            return null;
+        }
+        return attribute.getData();
+    }
+    @Override
+    public void setMinSdkVersion(int version){
+        ResXmlElement manifest = getOrCreateManifestElement();
+        ResXmlElement usesSdk = manifest.getElement(TAG_uses_sdk);
+        if(usesSdk == null){
+            usesSdk = manifest.newElement(TAG_uses_sdk);
+        }
+        ResXmlAttribute attribute = usesSdk.getOrCreateAndroidAttribute(NAME_minSdkVersion, ID_minSdkVersion);
+        attribute.setTypeAndData(ValueType.DEC, version);
+    }
+    @Override
     public Integer getTargetSdkVersion(){
         ResXmlElement manifest = getManifestElement();
         if(manifest==null){
             return null;
         }
-        ResXmlElement usesSdk = manifest.getElementByTagName(TAG_uses_sdk);
+        ResXmlElement usesSdk = manifest.getElement(TAG_uses_sdk);
         if(usesSdk==null){
             return null;
         }
@@ -396,30 +503,32 @@ public class AndroidManifestBlock extends ResXmlDocument {
         }
         return attribute.getData();
     }
+    @Override
+    public void setTargetSdkVersion(int version){
+        ResXmlElement manifest = getOrCreateManifestElement();
+        ResXmlElement usesSdk = manifest.getElement(TAG_uses_sdk);
+        if(usesSdk == null){
+            usesSdk = manifest.newElement(TAG_uses_sdk);
+        }
+        ResXmlAttribute attribute = usesSdk.getOrCreateAndroidAttribute(NAME_targetSdkVersion, ID_targetSdkVersion);
+        attribute.setTypeAndData(ValueType.DEC, version);
+    }
+    @Override
     public Integer getCompileSdkVersion(){
         return getManifestAttributeInt(ID_compileSdkVersion);
     }
-    public void setCompileSdkVersion(int val){
-        setManifestAttributeInt(NAME_compileSdkVersion, ID_compileSdkVersion, val);
+    @Override
+    public void setCompileSdkVersion(int version){
+        setManifestAttributeInt(NAME_compileSdkVersion, ID_compileSdkVersion, version);
     }
+    @Override
     public String getCompileSdkVersionCodename(){
         return getManifestAttributeString(ID_compileSdkVersionCodename);
     }
-    public void setCompileSdkVersionCodename(String versionCodeName){
+    @Override
+    public void setCompileSdkVersionCodename(String name){
         setManifestAttributeString(NAME_compileSdkVersionCodename,
-                ID_compileSdkVersionCodename, versionCodeName);
-    }
-    public Integer getVersionCode(){
-        return getManifestAttributeInt(ID_versionCode);
-    }
-    public void setVersionCode(int versionCode){
-        setManifestAttributeInt(NAME_versionCode, ID_versionCode, versionCode);
-    }
-    public String getVersionName(){
-        return getManifestAttributeString(ID_versionName);
-    }
-    public void setVersionName(String versionName){
-        setManifestAttributeString(NAME_versionName,  ID_versionName, versionName);
+                ID_compileSdkVersionCodename, name);
     }
     private String getManifestAttributeString(int resourceId){
         ResXmlElement manifest=getManifestElement();
@@ -457,9 +566,9 @@ public class AndroidManifestBlock extends ResXmlDocument {
     }
     public ResXmlElement getOrCreateApplicationElement(){
         ResXmlElement manifestElement = getOrCreateManifestElement();
-        ResXmlElement application = manifestElement.getElementByTagName(TAG_application);
+        ResXmlElement application = manifestElement.getElement(TAG_application);
         if(application == null){
-            application = manifestElement.createChildElement(TAG_application);
+            application = manifestElement.newElement(TAG_application);
         }
         return application;
     }
@@ -468,20 +577,30 @@ public class AndroidManifestBlock extends ResXmlDocument {
         if(manifestElement==null){
             return null;
         }
-        return manifestElement.getElementByTagName(TAG_application);
+        return manifestElement.getElement(TAG_application);
     }
     public ResXmlElement getManifestElement(){
-        ResXmlElement manifestElement=getResXmlElement();
-        if(manifestElement==null){
-            return null;
+        return getElement(AndroidManifest.TAG_manifest);
+    }
+    public void ensureFullClassNames(){
+        ResXmlElement application = getApplicationElement();
+        if(application == null){
+            return;
         }
-        if(!TAG_manifest.equals(manifestElement.getName())){
-            return null;
+        Iterator<ResXmlAttribute> iterator = application.recursiveAttributes();
+        while (iterator.hasNext()){
+            ResXmlAttribute attribute = iterator.next();
+            if(attribute.getNameId() != ID_name ||
+                    attribute.getValueType() != ValueType.STRING){
+                continue;
+            }
+            attribute.setValueAsString(
+                    fullClassName(attribute.getValueAsString()));
         }
-        return manifestElement;
+        application.refresh();
     }
     public String fullClassName(String name){
-        if(name == null || !name.startsWith(".")){
+        if(name == null || name.length() == 0 || name.charAt(0) != '.'){
             return name;
         }
         String packageName = getPackageName();
@@ -490,18 +609,16 @@ public class AndroidManifestBlock extends ResXmlDocument {
         }
         return packageName + name;
     }
-    private ResXmlElement getOrCreateManifestElement(){
-        ResXmlElement manifestElement=getResXmlElement();
-        if(manifestElement==null){
-            manifestElement=createRootElement(TAG_manifest);
-        }
-        if(!TAG_manifest.equals(manifestElement.getName())){
-            manifestElement.setName(TAG_manifest);
-        }
-        return manifestElement;
+    private ResXmlElement getOrCreateManifestElement() {
+        return getOrCreateElement(AndroidManifest.TAG_manifest);
+    }
+    public Iterator<ResXmlElement> getAndroidNameElements(String tag, String name) {
+        return recursiveElements((element) ->
+                element.equalsName(tag) && name.equals(getAndroidNameValue(element)));
     }
     @Override
     public String toString(){
+        touchChildNodesForDebug();
         StringBuilder builder=new StringBuilder();
         builder.append(getClass().getSimpleName());
         builder.append("{");
@@ -525,15 +642,19 @@ public class AndroidManifestBlock extends ResXmlDocument {
         builder.append("}");
         return builder.toString();
     }
+    public static String getAndroidNameValue(ResXmlElement element){
+        ResXmlAttribute attribute = element.searchAttributeByResourceId(AndroidManifestBlock.ID_name);
+        if(attribute != null){
+            return attribute.getValueAsString();
+        }
+        return null;
+    }
+
     public static boolean isAndroidManifestBlock(ResXmlDocument xmlBlock){
-        if(xmlBlock==null){
+        if(xmlBlock == null){
             return false;
         }
-        ResXmlElement root = xmlBlock.getResXmlElement();
-        if(root==null){
-            return false;
-        }
-        return TAG_manifest.equals(root.getName());
+        return xmlBlock.getElement(AndroidManifest.TAG_manifest) != null;
     }
     public static AndroidManifestBlock load(File file) throws IOException {
         AndroidManifestBlock manifestBlock = new AndroidManifestBlock();
@@ -545,70 +666,10 @@ public class AndroidManifestBlock extends ResXmlDocument {
         manifestBlock.readBytes(inputStream);
         return manifestBlock;
     }
-    public static final String TAG_action = "action";
-    public static final String TAG_activity = "activity";
-    public static final String TAG_activity_alias = "activity-alias";
-    public static final String TAG_application = "application";
-    public static final String TAG_category = "category";
-    public static final String TAG_data = "data";
-    public static final String TAG_intent_filter = "intent-filter";
-    public static final String TAG_manifest = "manifest";
-    public static final String TAG_meta_data = "meta-data";
-    public static final String TAG_package = "package";
-    public static final String TAG_permission = "permission";
-    public static final String TAG_provider = "provider";
-    public static final String TAG_receiver = "receiver";
-    public static final String TAG_service = "service";
-    public static final String TAG_uses_feature = "uses-feature";
-    public static final String TAG_uses_library = "uses-library";
-    public static final String TAG_uses_permission = "uses-permission";
-    public static final String TAG_uses_sdk = "uses-sdk";
 
-    public static final String NAME_compileSdkVersion = "compileSdkVersion";
-    public static final String NAME_compileSdkVersionCodename = "compileSdkVersionCodename";
-    public static final String NAME_installLocation="installLocation";
-    public static final String NAME_PACKAGE = "package";
-    public static final String NAME_split = "split";
-    public static final String NAME_coreApp = "coreApp";
-    public static final String NAME_platformBuildVersionCode = "platformBuildVersionCode";
-    public static final String NAME_platformBuildVersionName = "platformBuildVersionName";
-    public static final String NAME_versionCode = "versionCode";
-    public static final String NAME_versionName = "versionName";
-    public static final String NAME_targetSdkVersion = "targetSdkVersion";
-    public static final String NAME_name = "name";
-    public static final String NAME_extractNativeLibs = "extractNativeLibs";
-    public static final String NAME_isSplitRequired = "isSplitRequired";
-    public static final String NAME_value = "value";
-    public static final String NAME_resource = "resource";
-    public static final String NAME_debuggable = "debuggable";
-    public static final String NAME_icon = "icon";
-    public static final String NAME_label = "label";
-    public static final String NAME_theme = "theme";
-    public static final String NAME_id = "id";
-
-    public static final int ID_name = 0x01010003;
-    public static final int ID_compileSdkVersion = 0x01010572;
-    public static final int ID_targetSdkVersion = 0x01010270;
-    public static final int ID_compileSdkVersionCodename = 0x01010573;
-    public static final int ID_authorities = 0x01010018;
-    public static final int ID_host = 0x01010028;
-    public static final int ID_configChanges = 0x0101001f;
-    public static final int ID_screenOrientation = 0x0101001e;
-    public static final int ID_extractNativeLibs = 0x010104ea;
-    public static final int ID_isSplitRequired = 0x01010591;
-    public static final int ID_value = 0x01010024;
-    public static final int ID_resource = 0x01010025;
-    public static final int ID_versionCode = 0x0101021b;
-    public static final int ID_versionName = 0x0101021c;
-    public static final int ID_debuggable = 0x0101000f;
-    public static final int ID_icon = 0x01010002;
-    public static final int ID_label = 0x01010001;
-    public static final int ID_theme = 0x01010000;
-    public static final int ID_id = 0x010100d0;
-
-    public static final String VALUE_android_intent_action_MAIN = "android.intent.action.MAIN";
-
-    public static final String FILE_NAME = "AndroidManifest.xml";
-    public static final String FILE_NAME_BIN = "AndroidManifest.xml.bin";
-    public static final String FILE_NAME_JSON = "AndroidManifest.xml.json";
+    public static AndroidManifestBlock empty(){
+        AndroidManifestBlock manifestBlock = new AndroidManifestBlock();
+        manifestBlock.getOrCreateElement(EMPTY_MANIFEST_TAG);
+        return manifestBlock;
+    }
 }

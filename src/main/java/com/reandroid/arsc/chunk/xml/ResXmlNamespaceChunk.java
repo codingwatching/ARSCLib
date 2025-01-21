@@ -18,20 +18,19 @@ package com.reandroid.arsc.chunk.xml;
 import com.reandroid.arsc.chunk.ChunkType;
 import com.reandroid.arsc.item.ResXmlString;
 
-import java.util.Objects;
+abstract class ResXmlNamespaceChunk extends BaseXmlChunk implements ResXmlNamespace {
 
-abstract class ResXmlNamespaceChunk extends BaseXmlChunk implements ResXmlNamespace{
-    private ResXmlNamespaceChunk mPair;
     ResXmlNamespaceChunk(ChunkType chunkType) {
         super(chunkType, 0);
     }
+
     @Override
-    public String getUri(){
+    public String getUri() {
         return getString(getUriReference());
     }
     @Override
-    public void setUri(String uri){
-        if(uri == null){
+    public void setUri(String uri) {
+        if (uri == null) {
             setUriReference(-1);
             return;
         }
@@ -46,13 +45,20 @@ abstract class ResXmlNamespaceChunk extends BaseXmlChunk implements ResXmlNamesp
         return getString(getPrefixReference());
     }
     @Override
-    public void setPrefix(String prefix){
-        if(prefix == null){
+    public void setPrefix(String prefix) {
+        if(prefix == null) {
             setPrefixReference(-1);
             return;
         }
-        ResXmlString xmlString = getOrCreateString(prefix);
-        if(xmlString == null){
+        ResXmlString xmlString = null;
+        ResXmlString uriString = getResXmlString(getUriReference());
+        if (uriString != null) {
+            xmlString = uriString.getNamespacePrefix();
+        }
+        if (xmlString == null) {
+            xmlString = getOrCreateString(prefix);
+        }
+        if(xmlString == null) {
             throw new IllegalArgumentException("Null ResXmlString, add to parent element first");
         }
         setPrefixReference(xmlString.getIndex());
@@ -61,59 +67,36 @@ abstract class ResXmlNamespaceChunk extends BaseXmlChunk implements ResXmlNamesp
     public int getUriReference(){
         return getStringReference();
     }
-    void setUriReference(int ref){
+    void setUriReference(int ref) {
         int old = getUriReference();
         setStringReference(ref);
-        ResXmlNamespaceChunk pair=getPair();
-        if(pair!=null && pair.getUriReference()!=ref){
-            pair.setUriReference(ref);
-        }
-        if(old != ref){
+        if (old != ref) {
             onUriReferenceChanged(old, ref);
         }
     }
     void onUriReferenceChanged(int old, int uriReference){
 
     }
-    public int getPrefixReference(){
+
+    public int getPrefixReference() {
         return getNamespaceReference();
     }
-    public void setPrefixReference(int ref){
+    public void setPrefixReference(int ref) {
         setNamespaceReference(ref);
-        ResXmlNamespaceChunk pair=getPair();
-        if(pair!=null && pair.getPrefixReference()!=ref){
-            pair.setPrefixReference(ref);
-        }
-    }
-    ResXmlNamespaceChunk getPair(){
-        return mPair;
-    }
-    void setPair(ResXmlNamespaceChunk pair){
-        if(pair==this){
-            return;
-        }
-        this.mPair=pair;
-        if(pair !=null && pair.getPair()!=this){
-            pair.setPair(this);
-        }
     }
     @Override
-    public void setLineNumber(int lineNumber){
-        if(lineNumber == getLineNumber()){
-            return;
-        }
+    public void setLineNumber(int lineNumber) {
         super.setLineNumber(lineNumber);
-        ResXmlNamespaceChunk pair = getPair();
-        if(pair != null){
-            pair.setLineNumber(lineNumber);
-        }
+    }
+    public boolean isRemoved() {
+        return getParent() == null;
     }
     @Override
-    public String toString(){
-        String uri=getUri();
-        if(uri==null){
-            return super.toString();
-        }
-        return "xmlns:"+getPrefix()+"=\""+getUri()+"\"";
+    public boolean isUnused() {
+        return isRemoved();
+    }
+    @Override
+    public String toString() {
+        return "xmlns:" + getPrefix() + "=\"" + getUri() + "\"";
     }
 }

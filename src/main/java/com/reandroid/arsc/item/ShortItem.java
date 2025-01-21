@@ -15,68 +15,92 @@
  */
 package com.reandroid.arsc.item;
 
-import com.reandroid.arsc.io.BlockReader;
+import com.reandroid.arsc.base.Creator;
+import com.reandroid.arsc.base.DirectStreamReader;
 import com.reandroid.utils.HexUtil;
 
-import java.io.IOException;
-import java.io.InputStream;
+public class ShortItem extends BlockItem implements IntegerReference, DirectStreamReader {
 
-public class ShortItem extends BlockItem {
-    private short mCache;
+    private final boolean bigEndian;
+    private int mCache;
 
-    public ShortItem(){
+    public ShortItem(boolean bigEndian) {
         super(2);
+        this.bigEndian = bigEndian;
     }
-    public ShortItem(short val){
-        this();
-        set(val);
+    public ShortItem() {
+        this(false);
     }
-    public void set(short val){
-        if(val==mCache){
+    public ShortItem(short value){
+        this(false);
+        set(value);
+    }
+
+    @Override
+    public void set(int value){
+        if(value == mCache){
             return;
         }
-        mCache=val;
-        byte[] bts = getBytesInternal();
-        bts[1]= (byte) (val >>> 8 & 0xff);
-        bts[0]= (byte) (val & 0xff);
+        mCache = value;
+        byte[] bytes = getBytesInternal();
+        if (bigEndian) {
+            putBigEndianShort(bytes, 0, value);
+        } else {
+            putShort(bytes, 0, value);
+        }
     }
-    public short get(){
+    @Override
+    public int get(){
         return mCache;
     }
+    public void set(short value){
+        set(0xffff & value);
+    }
     public int unsignedInt(){
-        return 0xffff & get();
+        return get();
+    }
+    public short getShort(){
+        return (short) mCache;
     }
     public String toHex(){
-        return HexUtil.toHex4(get());
+        return HexUtil.toHex4(getShort());
     }
     @Override
     protected void onBytesChanged() {
-        // To save cpu usage, better to calculate once only when bytes changed
-        mCache=readShortBytes();
+        int s;
+        byte[] bytes = getBytesInternal();
+        if (bigEndian) {
+            s = getBigEndianShort(bytes, 0);
+        } else {
+            s = getShort(bytes, 0);
+        }
+        mCache = s;
     }
-    private short readShortBytes(){
-        byte[] bts = getBytesInternal();
-        return (short) (bts[0] & 0xff | (bts[1] & 0xff) << 8);
-    }
+
     @Override
     public String toString(){
         return String.valueOf(get());
     }
 
-    public static short readShort(BlockReader reader) throws IOException {
-        ShortItem shortItem = new ShortItem();
-        shortItem.readBytes(reader);
-        return shortItem.get();
-    }
-    public static short readShort(InputStream inputStream) throws IOException {
-        ShortItem shortItem = new ShortItem();
-        shortItem.readBytes(inputStream);
-        return shortItem.get();
-    }
-    public static int readUnsignedShort(BlockReader reader) throws IOException {
-        return 0x0000ffff & readShort(reader);
-    }
-    public static int readUnsignedShort(InputStream inputStream) throws IOException {
-        return 0x0000ffff & readShort(inputStream);
-    }
+    public static final Creator<ShortItem> CREATOR = new Creator<ShortItem>() {
+        @Override
+        public ShortItem[] newArrayInstance(int length) {
+            return new ShortItem[length];
+        }
+        @Override
+        public ShortItem newInstance() {
+            return new ShortItem(false);
+        }
+    };
+
+    public static final Creator<ShortItem> CREATOR_BIG_ENDIAN = new Creator<ShortItem>() {
+        @Override
+        public ShortItem[] newArrayInstance(int length) {
+            return new ShortItem[length];
+        }
+        @Override
+        public ShortItem newInstance() {
+            return new ShortItem(true);
+        }
+    };
 }

@@ -1,4 +1,4 @@
- /*
+/*
   *  Copyright (C) 2022 github.com/REAndroid
   *
   *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,7 +27,7 @@ import com.reandroid.json.JSONObject;
 import java.io.IOException;
 import java.util.AbstractList;
 
-public class SpecFlagsArray extends IntegerArray implements BlockLoad, JSONConvert<JSONArray> {
+public class SpecFlagsArray extends IntegerArrayBlock implements BlockLoad, JSONConvert<JSONArray> {
     private final IntegerItem entryCount;
     private AbstractList<SpecFlag> specFlagList;
     public SpecFlagsArray(IntegerItem entryCount) {
@@ -69,7 +69,7 @@ public class SpecFlagsArray extends IntegerArray implements BlockLoad, JSONConve
         super.put(id, flag);
     }
     @Override
-    public Integer get(int entryId){
+    public int get(int entryId){
         entryId = 0xffff & entryId;
         return super.get(entryId);
     }

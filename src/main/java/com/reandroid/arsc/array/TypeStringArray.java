@@ -27,12 +27,12 @@ public class TypeStringArray extends StringArray<TypeString> {
     public TypeString newInstance() {
         TypeString typeString=new TypeString(isUtf8());
         //create default name
-        this.lastCreateIndex++;
-        typeString.set("type-"+lastCreateIndex);
+        this.lastCreateIndex ++;
+        typeString.set("type-" + lastCreateIndex, false);
         return typeString;
     }
     @Override
-    public TypeString[] newInstance(int len) {
+    public TypeString[] newArrayInstance(int len) {
         return new TypeString[len];
     }
 }

@@ -15,12 +15,13 @@
  */
 package com.reandroid.archive.io;
 
+import com.reandroid.utils.io.FileUtil;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.file.StandardOpenOption;
 
 public class ZipFileOutput extends ZipOutput{
     private final File file;
@@ -69,7 +70,7 @@ public class ZipFileOutput extends ZipOutput{
             return fileChannel;
         }
         synchronized (this){
-            fileChannel = FileChannel.open(this.file.toPath(), StandardOpenOption.WRITE);
+            fileChannel = FileUtil.openWriteChannel(file);
             this.fileChannel = fileChannel;
             return fileChannel;
         }
@@ -79,7 +80,7 @@ public class ZipFileOutput extends ZipOutput{
     public void write(InputStream inputStream) throws IOException {
         FileChannel fileChannel = getFileChannel();
         long pos = fileChannel.position();
-        int bufferLength = 1024 * 1000 * 100;
+        int bufferLength = 1024 * 1000 * 10;
         byte[] buffer = new byte[bufferLength];
         long result = 0;
         int read;

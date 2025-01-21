@@ -16,10 +16,11 @@
 package com.reandroid.apk;
 
 import com.reandroid.arsc.chunk.PackageBlock;
-import com.reandroid.utils.StringsUtil;
+import com.reandroid.utils.CompareUtil;
 
 import java.io.File;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 
 public class ApkUtil {
     public static String replaceRootDir(String path, String dirName){
@@ -38,10 +39,7 @@ public class ApkUtil {
         String ext = ApkUtil.JSON_FILE_EXTENSION;
         if(path.endsWith(ext)){
             int i2 = path.length() - ext.length();
-            String tmp = path.substring(0, i2);
-            if(tmp.indexOf('.') > 0){
-                path = tmp;
-            }
+            path = path.substring(0, i2);
         }
         return path;
     }
@@ -105,7 +103,7 @@ public class ApkUtil {
                 results.add(dir);
             }
         }
-        StringsUtil.toStringSort(results);
+        results.sort(CompareUtil.getComparableComparator());
         return results;
     }
     public static List<File> listPublicXmlFiles(File resourcesDirectory){
@@ -123,7 +121,7 @@ public class ApkUtil {
                 }
             }
         }
-        StringsUtil.toStringSort(results);
+        results.sort(CompareUtil.getComparableComparator());
         return results;
     }
     private static File getPublicXmlFile(File resDir){
@@ -160,7 +158,7 @@ public class ApkUtil {
                 results.add(dir);
             }
         }
-        StringsUtil.toStringSort(results);
+        results.sort(CompareUtil.getComparableComparator());
         return results;
     }
     public static boolean isValuesDirectoryName(String name, boolean checkVariant){
@@ -211,8 +209,7 @@ public class ApkUtil {
         return name;
     }
 
-    public static final String JSON_FILE_EXTENSION=".json";
-    public static final String RES_JSON_NAME = "res-json";
+    public static final String JSON_FILE_EXTENSION = ".json";
     public static final String ROOT_NAME = "root";
     public static final String DEF_MODULE_NAME = "base";
     public static final String NAME_value_type = "value_type";

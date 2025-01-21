@@ -153,9 +153,22 @@ public class ResourceIdentifier extends Identifier{
     }
     public boolean renameBadSpec(){
         if(hasGoodName()){
-            return false;
+            return renameDollarPrefix();
         }
         setName(generateUniqueName());
+        return renameSpec();
+    }
+    public boolean renameDollarPrefix(){
+        if(!Identifier.isAapt()) {
+            return false;
+        }
+        String name = getName();
+        if(name.charAt(0) != '$'){
+            return false;
+        }
+        name = name.substring(1);
+
+        setName(name);
         return renameSpec();
     }
     public boolean renameSpec(){
@@ -235,7 +248,9 @@ public class ResourceIdentifier extends Identifier{
         return isAtoZ(ch)
                 || isDigits(ch)
                 || ch == '_'
-                || ch == '.';
+                || ch == '.'
+                || ch == '$'
+                || ch == '-';
     }
     private static boolean isGoodFirstChar(char ch){
         return isAtoZ(ch) ||
@@ -253,7 +268,7 @@ public class ResourceIdentifier extends Identifier{
     }
 
 
-    public static final int NAME_LENGTH_MIN = 2;
+    public static final int NAME_LENGTH_MIN = 1;
     public static final int NAME_LENGTH_MAX = 100;
 
 }

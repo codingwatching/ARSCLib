@@ -15,25 +15,24 @@
  */
 package com.reandroid.arsc.model;
 
+import com.reandroid.arsc.base.Block;
 import com.reandroid.arsc.chunk.PackageBlock;
 import com.reandroid.arsc.chunk.TableBlock;
+import com.reandroid.arsc.container.SpecTypePair;
 import com.reandroid.arsc.item.SpecString;
-import com.reandroid.utils.collection.CollectionUtil;
-import com.reandroid.utils.collection.ComputeIterator;
-import com.reandroid.utils.collection.FilterIterator;
-import com.reandroid.utils.HexUtil;
 import com.reandroid.arsc.value.Entry;
 import com.reandroid.arsc.value.ResConfig;
 import com.reandroid.arsc.value.ResValue;
 import com.reandroid.arsc.value.ValueType;
 import com.reandroid.arsc.value.attribute.AttributeBag;
+import com.reandroid.utils.HexUtil;
+import com.reandroid.utils.collection.*;
 import org.xmlpull.v1.XmlSerializer;
 
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.function.Predicate;
 
 public class ResourceEntry implements Iterable<Entry>{
@@ -45,6 +44,68 @@ public class ResourceEntry implements Iterable<Entry>{
         this.packageBlock = packageBlock;
     }
 
+    public Iterator<String> getStringValues() {
+        return this.getStringValues(this.iterator());
+    }
+    Iterator<String> getStringValues(Iterator<Entry> iterator) {
+        return new IterableIterator<Entry, String>(iterator) {
+            public Iterator<String> iterator(Entry element) {
+                return getStringValues(element);
+            }
+        };
+    }
+    Iterator<String> getStringValues(Entry entry) {
+        ResValue resValue = entry.getResValue();
+        if (resValue == null) {
+            return EmptyIterator.of();
+        }
+        ValueType valueType = resValue.getValueType();
+        if (valueType == ValueType.STRING) {
+            return SingleIterator.of(resValue.getValueAsString());
+        }
+        if(!valueType.isReference()) {
+            return EmptyIterator.of();
+        }
+        TableBlock tableBlock = getPackageBlock().getTableBlock();
+        if(tableBlock == null) {
+            return EmptyIterator.of();
+        }
+        return this.getStringValues(tableBlock.resolveReference(resValue.getData()).iterator());
+    }
+
+    public ResourceEntry previous(){
+        int id = getResourceId();
+        int entryId = id & 0xffff;
+        if(entryId == 0){
+            return null;
+        }
+        entryId = entryId - 1;
+        id = id & 0xffff0000;
+        id = id | entryId;
+        return new ResourceEntry(getPackageBlock(), id);
+    }
+    public ResourceEntry next(){
+        int id = getResourceId();
+        int entryId = id & 0xffff;
+        if(entryId == 0xffff){
+            return null;
+        }
+        PackageBlock packageBlock = getPackageBlock();
+        SpecTypePair specTypePair = packageBlock.getSpecTypePair((id >> 16) & 0xff);
+        if(specTypePair == null){
+            return null;
+        }
+        entryId = entryId + 1;
+        return specTypePair.getResource(entryId);
+    }
+    public ResourceEntry getLast(){
+        PackageBlock packageBlock = getPackageBlock();
+        SpecTypePair specTypePair = packageBlock.getSpecTypePair((getResourceId() >> 16) & 0xff);
+        if(specTypePair != null){
+            return specTypePair.getResource(specTypePair.getHighestEntryId());
+        }
+        return null;
+    }
     public ResourceEntry resolveReference(){
         Set<Integer> processedIds = new HashSet<>();
         processedIds.add(0);
@@ -98,7 +159,7 @@ public class ResourceEntry implements Iterable<Entry>{
         int resourceId = this.getResourceId();
         byte typeId = (byte)((resourceId >> 16) & 0xff);
         short entryId = (short)(resourceId & 0xffff);
-        Entry entry = packageBlock.getOrCreateEntry(typeId, entryId, resConfig);
+        Entry entry = getPackageBlock().getOrCreateEntry(typeId, entryId, resConfig);
         String name = getName();
         if(name != null && entry.getName() ==  null){
             entry.setName(name, true);
@@ -108,13 +169,10 @@ public class ResourceEntry implements Iterable<Entry>{
     public Entry get(String qualifiers){
         return get(ResConfig.parse(qualifiers));
     }
-    public Entry get(ResConfig resConfig){
-        for(Entry entry : this){
-            if(resConfig.equals(entry.getResConfig())){
-                return entry;
-            }
-        }
-        return null;
+    public Entry get(ResConfig resConfig) {
+        int id = getResourceId();
+        return getPackageBlock().getEntry(resConfig,
+                (id >> 16) & 0xff, id & 0xffff);
     }
     public int getConfigsCount(){
         return CollectionUtil.count(iterator(true));
@@ -156,11 +214,38 @@ public class ResourceEntry implements Iterable<Entry>{
     public boolean isEmpty() {
         return CollectionUtil.isEmpty(iterator(true));
     }
+    public boolean isDefined() {
+        return iterator(true).hasNext();
+    }
     public boolean isDeclared() {
         return getName() != null;
     }
     public PackageBlock getPackageBlock(){
         return packageBlock;
+    }
+    public boolean isContext(Block block) {
+        if(block == null){
+            return false;
+        }
+        if(block instanceof TableBlock) {
+            PackageBlock packageBlock = getPackageBlock();
+            return packageBlock != null && block == packageBlock.getTableBlock();
+        }
+        if(block instanceof PackageBlock) {
+            return isContext((PackageBlock) block);
+        }
+        return isContext(block.getParentInstance(PackageBlock.class));
+    }
+    public boolean isContext(PackageBlock packageBlock) {
+        if(packageBlock == null){
+            return false;
+        }
+        PackageBlock context = getPackageBlock();
+        if(context == null){
+            return false;
+        }
+        return context == packageBlock ||
+                context.getTableBlock() == packageBlock.getTableBlock();
     }
     public int getResourceId() {
         return resourceId;
@@ -169,7 +254,7 @@ public class ResourceEntry implements Iterable<Entry>{
         return getPackageBlock().getName();
     }
     public String getType(){
-        return packageBlock.typeNameOf((getResourceId() >> 16) & 0xff);
+        return getPackageBlock().typeNameOf((getResourceId() >> 16) & 0xff);
     }
     public void setName(String name){
         boolean hasEntry = false;
@@ -209,36 +294,46 @@ public class ResourceEntry implements Iterable<Entry>{
         return iterator(true);
     }
     public Iterator<Entry> iterator(boolean skipNull){
-        return packageBlock.getEntries(getResourceId(), skipNull);
+        return getPackageBlock().getEntries(getResourceId(), skipNull);
     }
-    public Iterator<Entry> iterator(Predicate<Entry> filter){
-        return new FilterIterator<>(packageBlock.getEntries(getResourceId()), filter);
+    public Iterator<Entry> iterator(Predicate<? super Entry> filter) {
+        return new FilterIterator<>(getPackageBlock().getEntries(getResourceId()), filter);
     }
     public Iterator<ResConfig> getConfigs(){
-        return new ComputeIterator<>(iterator(false), new Function<Entry, ResConfig>() {
-            @Override
-            public ResConfig apply(Entry entry) {
-                return entry.getResConfig();
-            }
-        });
+        return new ComputeIterator<>(iterator(false), Entry::getResConfig);
     }
     public String getHexId(){
         return HexUtil.toHex8(getResourceId());
     }
-
+    public ResourceName toResourceName() {
+        String name = getName();
+        if(name == null) {
+            return null;
+        }
+        return new ResourceName(getPackageName(), getType(), name);
+    }
+    public String buildReference(){
+        return buildReference(getPackageBlock(), null);
+    }
+    public String buildReference(PackageBlock context){
+        return buildReference(context, null);
+    }
     public String buildReference(PackageBlock context, ValueType referenceType){
-        if(!referenceType.isReference()){
-            throw new IllegalArgumentException("Not reference: " + referenceType);
-        }
         StringBuilder builder = new StringBuilder();
-        if(referenceType == ValueType.REFERENCE){
-            builder.append('@');
-        }else {
-            builder.append('?');
+        if(referenceType != null){
+            if(referenceType == ValueType.REFERENCE){
+                builder.append('@');
+            }else {
+                builder.append('?');
+            }
         }
-        if(context != getPackageBlock()){
-            builder.append(getPackageName());
-            builder.append(':');
+        PackageBlock packageBlock = getPackageBlock();
+        if(context != packageBlock && !packageBlock.isEmpty()){
+            String packageName = getPackageName();
+            if(packageName != null){
+                builder.append(packageName);
+                builder.append(':');
+            }
         }
         builder.append(getType());
         builder.append('/');
@@ -258,14 +353,15 @@ public class ResourceEntry implements Iterable<Entry>{
     }
 
     public boolean serializePublicXml(XmlSerializer serializer) throws IOException {
-        if(isEmpty()){
+        String name = getName();
+        if(name == null){
             return false;
         }
         serializer.text("\n  ");
         serializer.startTag(null, PackageBlock.TAG_public);
         serializer.attribute(null, "id", getHexId());
         serializer.attribute(null, "type", getType());
-        serializer.attribute(null, "name", getName());
+        serializer.attribute(null, "name", name);
         serializer.endTag(null, PackageBlock.TAG_public);
         return true;
     }
@@ -288,7 +384,11 @@ public class ResourceEntry implements Iterable<Entry>{
 
     @Override
     public String toString(){
-        return getHexId() + " @" + getPackageName()
+        String packageName = getPackageName();
+        if(packageName == null){
+            return getHexId() + " @" + getType() + "/" + getName();
+        }
+        return getHexId() + " @" + packageName
                 + ":" + getType() + "/" + getName();
     }
 

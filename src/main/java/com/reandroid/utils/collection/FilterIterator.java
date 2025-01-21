@@ -20,12 +20,15 @@ import java.util.NoSuchElementException;
 import java.util.function.Predicate;
 
 public class FilterIterator<T> implements Iterator<T>, Predicate<T> {
+
     private final Iterator<? extends T> iterator;
     private T mNext;
-    private final Predicate<T> mSecondTester;
-    public FilterIterator(Iterator<? extends T> iterator, Predicate<T> secondTester){
+    private final Predicate<? super T> mFilter;
+    private boolean mFinished;
+
+    public FilterIterator(Iterator<? extends T> iterator, Predicate<? super T> filter){
         this.iterator = iterator;
-        this.mSecondTester = secondTester;
+        this.mFilter = filter;
     }
     public FilterIterator(Iterator<? extends T> iterator){
         this(iterator, null);
@@ -38,7 +41,15 @@ public class FilterIterator<T> implements Iterator<T>, Predicate<T> {
 
     @Override
     public boolean hasNext() {
-        return getNext() != null;
+        if(mFinished) {
+            return false;
+        }
+        if(getNext() != null){
+            return true;
+        }
+        mFinished = true;
+        onFinished();
+        return false;
     }
     @Override
     public T next() {
@@ -48,6 +59,8 @@ public class FilterIterator<T> implements Iterator<T>, Predicate<T> {
         }
         mNext = null;
         return item;
+    }
+    public void onFinished() {
     }
     private T getNext(){
         if(mNext == null) {
@@ -65,8 +78,8 @@ public class FilterIterator<T> implements Iterator<T>, Predicate<T> {
         if(item == null || !test(item)){
             return false;
         }
-        return mSecondTester == null
-                || mSecondTester.test(item);
+        return mFilter == null
+                || mFilter.test(item);
     }
 
     public static final class Except<T1> extends FilterIterator<T1>{
@@ -92,5 +105,11 @@ public class FilterIterator<T> implements Iterator<T>, Predicate<T> {
             }
             return item.equals(excludeItem);
         }
+    }
+    public static<T1> Iterator<T1> of(Iterator<? extends T1> iterator,  Predicate<? super T1> filter){
+        if(iterator == null || !iterator.hasNext()){
+            return EmptyIterator.of();
+        }
+        return new FilterIterator<>(iterator, filter);
     }
 }

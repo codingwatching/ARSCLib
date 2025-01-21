@@ -1,6 +1,7 @@
 package com.reandroid.arsc.chunk.xml;
 
 import com.reandroid.apk.AndroidFrameworks;
+import com.reandroid.apk.ApkModule;
 import com.reandroid.arsc.chunk.TableBlock;
 import com.reandroid.arsc.model.ResourceLibrary;
 import com.reandroid.xml.XMLFactory;
@@ -18,40 +19,40 @@ public class ResXmlDocumentTest {
     public void testXmlNodes(){
         ResXmlDocument document = new ResXmlDocument();
         ResXmlElement root = document.getOrCreateElement("manifest");
-        ResXmlElement child = root.createChildElement("child");
-        child.setTagNamespace(ResourceLibrary.URI_RES_AUTO, "prefix");
+        ResXmlElement child = root.newElement("child");
+        child.setNamespace(ResourceLibrary.URI_RES_AUTO, "prefix");
 
         Assert.assertEquals("prefix:child", child.getName(true));
 
-        child.setTagNamespace(null, null);
+        child.setNamespace(null, null);
 
         Assert.assertEquals("child", child.getName(true));
 
         String text = "Xml text node";
-        child.addResXmlText(text);
+        child.newText().setText(text);
 
-        Assert.assertEquals(1, child.listXmlTextNodes().size());
-        Assert.assertEquals(text, child.listXmlTextNodes().get(0).getText());
+        Assert.assertEquals(1, child.getTextsCount());
+        Assert.assertEquals(text, child.getTexts().next().getText());
 
-        child.removeNode(child.listXmlTextNodes().get(0));
+        child.remove(child.iterator().next());
 
-        Assert.assertEquals(0, child.listXmlTextNodes().size());
-        Assert.assertEquals(0, child.listXmlNodes().size());
+        Assert.assertEquals(0, child.getTextsCount());
+        Assert.assertEquals(0, child.size());
 
-        root.createChildElement("child");
-        root.createChildElement("child-2");
+        root.newElement("child");
+        root.newElement("child-2");
 
-        Assert.assertEquals(3, root.listElements().size());
-        Assert.assertEquals(2, root.listElements("child").size());
-        Assert.assertEquals(1, root.listElements("child-2").size());
-        Assert.assertEquals(0, root.listElements("child-3").size());
-        Assert.assertEquals(3, root.listXmlNodes().size());
+        Assert.assertEquals(3, root.getElementsCount());
+        Assert.assertEquals(2, root.getElementsCount("child"));
+        Assert.assertEquals(1, root.getElementsCount("child-2"));
+        Assert.assertEquals(0, root.getElementsCount("child-3"));
+        Assert.assertEquals(3, root.size());
 
-        Assert.assertNotNull("Element not found <child>", root.getElementByTagName("child"));
-        root.removeNode(root.getElementByTagName("child"));
-        Assert.assertEquals(1, root.listElements("child").size());
-        root.clearChildes();
-        Assert.assertEquals("Child nodes cleared", 0, root.listXmlNodes().size());
+        Assert.assertNotNull("Element not found <child>", root.getElement("child"));
+        root.remove(root.getElement("child"));
+        Assert.assertEquals(1, root.getElementsCount("child"));
+        root.clear();
+        Assert.assertEquals("Child nodes cleared", 0, root.size());
     }
     @Test
     public void testAddAttribute(){
@@ -115,16 +116,16 @@ public class ResXmlDocumentTest {
     @Test
     public void testEncodeDecodeXml() throws XmlPullParserException, IOException {
         ResXmlDocument document = new ResXmlDocument();
-        document.setPackageBlock(createDummy().pickOne());
+        document.setApkFile(createEmptyApkModule());
 
         XmlPullParser parser = XMLFactory.newPullParser(XML_STRING);
         document.parse(parser);
 
-        ResXmlElement root = document.getResXmlElement();
+        ResXmlElement root = document.getDocumentElement();
         Assert.assertNotNull(root);
-        Assert.assertEquals(3, root.countElements());
+        Assert.assertEquals(3, root.size());
         Assert.assertEquals(2, root.getNamespaceCount());
-        Assert.assertEquals(11, root.getAttributeCount());
+        Assert.assertEquals(12, root.getAttributeCount());
 
         ResXmlAttribute attribute = root.searchAttributeByName("style");
         Assert.assertNotNull(attribute);
@@ -133,6 +134,7 @@ public class ResXmlDocumentTest {
         XmlSerializer serializer = XMLFactory.newSerializer(writer);
         document.serialize(serializer);
         writer.close();
+        document.refreshFull();
 
         String org = XML_STRING;
         String decoded = writer.toString();
@@ -140,15 +142,20 @@ public class ResXmlDocumentTest {
         decoded = decoded.replaceAll("\\s+", "");
         Assert.assertEquals(org, decoded);
     }
-    private static TableBlock createDummy() throws IOException {
+    private static ApkModule createEmptyApkModule() throws IOException {
+        ApkModule apkModule = new ApkModule();
+        apkModule.setTableBlock(createEmptyTable());
+        return apkModule;
+    }
+    private static TableBlock createEmptyTable() throws IOException {
         TableBlock tableBlock = new TableBlock();
-        tableBlock.newPackage(0x7f, "com.example.package");
-        tableBlock.refresh();
         tableBlock.addFramework(AndroidFrameworks.getLatest().getTableBlock());
+        tableBlock.refresh();
         return tableBlock;
     }
     private static final String XML_STRING = "<?xml version='1.0' encoding='utf-8' ?>\n" +
             "<manifest android:configChanges=\"keyboardHidden|orientation|screenSize\"\n" +
+            "          android:title=\"60%\"\n" +
             "          android:versionCode=\"1\"\n"+
             "          android:versionName=\"1.0\"\n" +
             "          android:compileSdkVersion=\"32\"\n" +

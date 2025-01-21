@@ -16,26 +16,38 @@
 package com.reandroid.arsc.chunk.xml;
 
 import com.reandroid.arsc.chunk.PackageBlock;
-import com.reandroid.arsc.coder.*;
-import com.reandroid.arsc.model.ResourceEntry;
+import com.reandroid.arsc.coder.EncodeResult;
+import com.reandroid.arsc.coder.ValueCoder;
+import com.reandroid.arsc.coder.XmlSanitizer;
 import com.reandroid.arsc.io.BlockReader;
 import com.reandroid.arsc.item.*;
+import com.reandroid.arsc.model.ResourceEntry;
 import com.reandroid.arsc.pool.ResXmlStringPool;
 import com.reandroid.arsc.pool.StringPool;
-import com.reandroid.utils.HexUtil;
+import com.reandroid.arsc.refactor.ResourceMergeOption;
 import com.reandroid.arsc.value.AttributeValue;
+import com.reandroid.arsc.value.ValueItem;
 import com.reandroid.arsc.value.ValueType;
 import com.reandroid.arsc.value.attribute.AttributeBag;
+import com.reandroid.common.Namespace;
+import com.reandroid.json.JSONException;
 import com.reandroid.json.JSONObject;
+import com.reandroid.utils.HexUtil;
+import com.reandroid.utils.ObjectsUtil;
 import com.reandroid.utils.StringsUtil;
 import com.reandroid.xml.XMLAttribute;
 import com.reandroid.xml.XMLUtil;
+import com.reandroid.xml.base.Attribute;
+import org.xmlpull.v1.XmlPullParser;
+import org.xmlpull.v1.XmlPullParserException;
 import org.xmlpull.v1.XmlSerializer;
 
 import java.io.IOException;
 import java.util.Objects;
 
-public class ResXmlAttribute extends AttributeValue implements Comparable<ResXmlAttribute>{
+public class ResXmlAttribute extends AttributeValue implements
+        Attribute, Comparable<ResXmlAttribute> {
+
     private ReferenceItem mNSReference;
     private ReferenceItem mNameReference;
     private ReferenceItem mNameIdReference;
@@ -53,21 +65,38 @@ public class ResXmlAttribute extends AttributeValue implements Comparable<ResXml
         this(20);
     }
 
-    public boolean autoSetNamespace(){
-        if(getNameResourceID() == 0){
-            return setNamespace(null, null);
-        }
-        ResourceEntry nameEntry = resolveName();
-        if(nameEntry == null){
+    public boolean autoSetNamespace() {
+        return autoSetNamespace(true);
+    }
+    public boolean autoSetNamespace(boolean removeNoIdPrefix) {
+        if(getNameId() == 0){
+            if(removeNoIdPrefix) {
+                String uri = getUri();
+                if(!Namespace.isExternalUri(uri) ||
+                        !Namespace.isValidUri(uri) ||
+                        !Namespace.isValidPrefix(getPrefix())) {
+                    return setNamespace(null, null);
+                }
+            }
             return false;
         }
-        PackageBlock packageBlock = nameEntry.getPackageBlock();
-        return setNamespace(packageBlock.getUri(), packageBlock.getPrefix());
+        return autoSetNamespace(resolveName());
     }
-    public boolean autoSetName(){
-        int resourceId = getNameResourceID();
-        if(getNameResourceID() == 0){
-            return setNamespace(null, null);
+    public boolean autoSetName() {
+        return autoSetName(true);
+    }
+    public boolean autoSetName(boolean removeNoIdPrefix) {
+        int nameId = getNameId();
+        if(nameId == 0) {
+            if(removeNoIdPrefix) {
+                String uri = getUri();
+                if(!Namespace.isExternalUri(uri) ||
+                        !Namespace.isValidUri(uri) ||
+                        !Namespace.isValidPrefix(getPrefix())) {
+                    return setNamespace(null, null);
+                }
+            }
+            return false;
         }
         ResourceEntry nameEntry = resolveName();
         if(nameEntry == null || nameEntry.isEmpty()){
@@ -77,11 +106,27 @@ public class ResXmlAttribute extends AttributeValue implements Comparable<ResXml
         if(name == null){
             return false;
         }
-        PackageBlock packageBlock = nameEntry.getPackageBlock();
-        boolean nsChanged = setNamespace(packageBlock.getUri(), packageBlock.getPrefix());
+        boolean nsChanged = autoSetNamespace(nameEntry);
         String nameOld = getName();
-        setName(name, resourceId);
-        return nsChanged | Objects.equals(nameOld, name);
+        setName(name, nameId);
+        return nsChanged || Objects.equals(nameOld, name);
+    }
+    private boolean autoSetNamespace(ResourceEntry nameEntry) {
+        if(nameEntry == null){
+            return false;
+        }
+        PackageBlock packageBlock = nameEntry.getPackageBlock();
+        String prefix = getPrefix();
+        String uri = getUri();
+        String packageName = packageBlock.getName();
+        if(!packageBlock.isMultiPackage() &&
+                Namespace.isValidPrefix(prefix, packageName) &&
+                Namespace.isValidUri(uri, packageName)) {
+            return false;
+        }
+        prefix = packageBlock.getPrefix();
+        uri = packageBlock.getUri();
+        return setNamespace(uri, prefix);
     }
     @Override
     public boolean isUndefined(){
@@ -90,56 +135,113 @@ public class ResXmlAttribute extends AttributeValue implements Comparable<ResXml
     public String getUri(){
         return getString(getNamespaceReference());
     }
-    /**
-     * Use getName(true)
-     * */
-    @Deprecated
-    public String getFullName(){
-        return getName(true);
+
+    public boolean equalsNameId(int resourceId) {
+        return resourceId != 0 && resourceId == getNameId();
     }
-    public boolean equalsName(String name){
-        if(name == null){
+    public boolean equalsNameWithNoId(String name) {
+        return getNameId() == 0 && equalsName(name);
+    }
+
+    public boolean equalsName(String name) {
+        if (name == null) {
             return getName() == null;
         }
         String prefix = XMLUtil.splitPrefix(name);
-        if(prefix != null && !prefix.equals(getNamePrefix())){
+        if(prefix != null && !prefix.equals(getPrefix())){
             return false;
         }
+        name = XMLUtil.splitName(name);
         return name.equals(getName());
+    }
+    public boolean isEqual(String namespace, String name) {
+        if (name == null || !ObjectsUtil.equals(getUri(), namespace)) {
+            return false;
+        }
+        name = XMLUtil.splitName(name);
+        return name.equals(getName(false)) ||
+                name.equals(decodeName(false));
     }
     public String getName(boolean includePrefix){
         String name = getName();
         if(name == null || !includePrefix){
             return name;
         }
-        String prefix = getNamePrefix();
+        String prefix = getPrefix();
         if(prefix == null){
             return name;
         }
         return prefix + ":" + name;
     }
-    public String getName(){
+    public String getName() {
         return getString(getNameReference());
     }
     @Override
+    public void setName(String name) {
+        setName(name, 0);
+    }
+
+    @Override
     public String decodePrefix(){
-        int resourceId = getNameResourceID();
-        if(resourceId == 0){
+        int resourceId = getNameId();
+        String prefix = getPrefix();
+        if(resourceId == 0) {
+            if(Namespace.isValidPrefix(prefix) &&
+                    Namespace.isExternalUri(getUri())) {
+                return prefix;
+            }
             return null;
         }
-        return getNamePrefix();
+        ResourceEntry resourceEntry = resolveName();
+        if(resourceEntry != null) {
+            PackageBlock packageBlock = resourceEntry.getPackageBlock();
+            if(packageBlock.isMultiPackage() ||
+                    !Namespace.isValidPrefix(prefix, packageBlock.getName())) {
+                prefix = packageBlock.getPrefix();
+            }
+        }else {
+            prefix = Namespace.prefixForResourceId(resourceId);
+        }
+        return prefix;
+    }
+    public String decodeUri() {
+        String uri = getUri();
+        int resourceId = getNameId();
+        if(resourceId == 0) {
+            if(!Namespace.isExternalUri(uri)) {
+                uri = null;
+            }
+            return uri;
+        }
+        ResourceEntry resourceEntry = resolveName();
+        if(!Namespace.isValidUri(uri, resourceId)) {
+            if(resourceEntry == null){
+                uri = Namespace.uriForResourceId(resourceId);
+            }else {
+                uri = resourceEntry.getPackageBlock().getUri();
+            }
+        }
+        return uri;
     }
     @Override
     public String decodeName(boolean includePrefix){
-        int resourceId = getNameResourceID();
-        if(resourceId == 0){
-            return getName();
+        int resourceId = getNameId();
+        if(resourceId == 0) {
+            String name = getName(false);
+            if(!includePrefix){
+                return name;
+            }
+            String prefix = decodePrefix();
+            if(prefix == null) {
+                return name;
+            }
+            return prefix + ":" + name;
         }
         ResourceEntry resourceEntry = resolveName();
         if(resourceEntry == null || !resourceEntry.isDeclared()){
             String name = ValueCoder.decodeUnknownNameId(resourceId);
             if(includePrefix){
-                String prefix = getNamePrefix();
+                String prefix = decodePrefix();
                 if(prefix != null){
                     name = prefix + ":" + name;
                 }
@@ -148,26 +250,49 @@ public class ResXmlAttribute extends AttributeValue implements Comparable<ResXml
         }
         String name = resourceEntry.getName();
         if(includePrefix && name != null){
-            String prefix = getNamePrefix();
+            String prefix = decodePrefix();
             if(prefix != null){
                 name = prefix + ":" + name;
             }
         }
         return name;
     }
-    public String getNamePrefix(){
+    public String getPrefix() {
         ResXmlStartNamespace namespace = getStartNamespace();
         if(namespace != null){
             return namespace.getPrefix();
         }
         return null;
     }
-    // WARN! Careful this is not real value
+    public ResXmlNamespace getNamespace(){
+        return getStartNamespace();
+    }
+    public void setNamespace(Namespace namespace){
+        if(namespace != null){
+            setNamespace(namespace.getUri(), namespace.getPrefix());
+        }else {
+            setNamespace(null, null);
+        }
+    }
+
+    @Override
+    public ResXmlElement getParentNode() {
+        return getParentInstance(ResXmlElement.class);
+    }
+
+    @Override
+    public int getLineNumber() {
+        return getParentNode().getLineNumber();
+    }
+    @Override
+    public void setLineNumber(int lineNumber) {
+    }
+
     public String getValueString(){
         return getString(getValueStringReference());
     }
     @Override
-    public int getNameResourceID(){
+    public int getNameId(){
         ResXmlID xmlID = getResXmlID();
         if(xmlID != null){
             return xmlID.get();
@@ -175,28 +300,28 @@ public class ResXmlAttribute extends AttributeValue implements Comparable<ResXml
         return 0;
     }
     @Override
-    public void setNameResourceID(int resourceId){
-        ResXmlIDMap xmlIDMap=getResXmlIDMap();
-        if(xmlIDMap==null){
+    public void setNameId(int resourceId) {
+        ResXmlIDMap xmlIDMap = getResXmlIDMap();
+        if (xmlIDMap == null) {
             return;
         }
         ResXmlID xmlID = xmlIDMap.getOrCreate(resourceId);
         setNameReference(xmlID.getIndex());
     }
-    public void setName(String name, int resourceId){
-        if(Objects.equals(name, getName()) && resourceId==getNameResourceID()){
+    @Override
+    public void setName(String name, int resourceId) {
+        if(ObjectsUtil.equals(name, getName()) && resourceId == getNameId()){
             return;
         }
         unlink(mNameReference);
         unLinkNameId(getResXmlID());
         ResXmlString xmlString = getOrCreateAttributeName(name, resourceId);
-        if(xmlString==null){
+        if(xmlString == null){
             return;
         }
         setNameReference(xmlString.getIndex());
         mNameReference = link(OFFSET_NAME);
         linkNameId();
-        return;
     }
     private void linkStartNameSpace(){
         unLinkStartNameSpace();
@@ -224,9 +349,9 @@ public class ResXmlAttribute extends AttributeValue implements Comparable<ResXml
         if(namespace != null && namespace.getUriReference() == uriRef){
             return namespace;
         }
-        ResXmlElement parentElement = getParentResXmlElement();
-        if(parentElement != null){
-            return parentElement.getStartNamespaceByUriRef(uriRef);
+        ResXmlElement parentElement = getParentElement();
+        if(parentElement != null) {
+            return (ResXmlStartNamespace) parentElement.getNamespaceForUriReference(uriRef);
         }
         return null;
     }
@@ -235,11 +360,19 @@ public class ResXmlAttribute extends AttributeValue implements Comparable<ResXml
         if(stringPool==null){
             return null;
         }
-        return stringPool.getOrCreateAttribute(resourceId, name);
+        return stringPool.getOrCreate(resourceId, name);
     }
-    public ResXmlElement getParentResXmlElement(){
+    public boolean removeSelf(){
+        ResXmlElement parent = getParentElement();
+        if(parent != null){
+            return parent.removeAttribute(this);
+        }
+        return false;
+    }
+    public ResXmlElement getParentElement() {
         return getParent(ResXmlElement.class);
     }
+
     public int getAttributesUnitSize(){
         return OFFSET_SIZE + super.getSize();
     }
@@ -269,16 +402,19 @@ public class ResXmlAttribute extends AttributeValue implements Comparable<ResXml
         return stringPool.get(ref);
     }
     private ResXmlID getResXmlID(){
-        ResXmlIDMap xmlIDMap = getResXmlIDMap();
-        if(xmlIDMap == null){
-            return null;
+        ResXmlString xmlString = (ResXmlString) getStringItem(getNameReference());
+        if(xmlString != null) {
+            return xmlString.getResXmlID();
         }
-        return xmlIDMap.getResXmlIDArray().get(getNameReference());
+        return null;
     }
     private ResXmlIDMap getResXmlIDMap(){
-        ResXmlElement xmlElement=getParentResXmlElement();
-        if(xmlElement!=null){
-            return xmlElement.getResXmlIDMap();
+        ResXmlElement xmlElement = getParentElement();
+        if(xmlElement != null) {
+            ResXmlDocument document = xmlElement.getParentDocument();
+            if (document != null) {
+                return document.getResXmlIDMap();
+            }
         }
         return null;
     }
@@ -292,7 +428,7 @@ public class ResXmlAttribute extends AttributeValue implements Comparable<ResXml
         if(uri == null && prefix == null){
             return setNamespaceReference(-1);
         }
-        ResXmlElement parentElement = getParentResXmlElement();
+        ResXmlElement parentElement = getParentElement();
         if(parentElement == null){
             return false;
         }
@@ -300,9 +436,9 @@ public class ResXmlAttribute extends AttributeValue implements Comparable<ResXml
         if(uri != null && prefix != null){
             namespace = parentElement.getOrCreateNamespace(uri, prefix);
         }else if(uri != null){
-            namespace = parentElement.getStartNamespaceByUri(uri);
+            namespace = parentElement.getNamespaceForUri(uri);
         }else{
-            namespace = parentElement.getNamespaceByPrefix(prefix);
+            namespace = parentElement.getNamespaceForPrefix(prefix);
         }
         if(namespace == null){
             // TODO: should throw ?
@@ -391,8 +527,8 @@ public class ResXmlAttribute extends AttributeValue implements Comparable<ResXml
     }
     @Override
     public ResXmlDocument getParentChunk() {
-        ResXmlElement element = getParentResXmlElement();
-        if(element!=null){
+        ResXmlElement element = getParentElement();
+        if(element != null){
             return element.getParentDocument();
         }
         return null;
@@ -400,7 +536,10 @@ public class ResXmlAttribute extends AttributeValue implements Comparable<ResXml
 
     private void linkNameId(){
         ResXmlID xmlID = getResXmlID();
-        if(xmlID==null){
+        if(xmlID == null){
+            return;
+        }
+        if(mNameIdReference != null && xmlID.hasReference(this)) {
             return;
         }
         unLinkNameId(xmlID);
@@ -479,43 +618,83 @@ public class ResXmlAttribute extends AttributeValue implements Comparable<ResXml
         }
         return null;
     }
+
+    @Override
+    public void merge(ValueItem valueItem) {
+        super.merge(valueItem);
+        ResXmlAttribute coming = (ResXmlAttribute) valueItem;
+        setName(coming.getName(false), coming.getNameId());
+        setNamespace(coming.getNamespace());
+    }
+
+    @Override
+    public void mergeWithName(ResourceMergeOption mergeOption, ValueItem valueItem) {
+        super.mergeWithName(mergeOption, valueItem);
+        ResXmlAttribute attribute = (ResXmlAttribute) valueItem;
+        setNamespace(attribute.getNamespace());
+    }
+
     @Override
     public int compareTo(ResXmlAttribute other) {
-        int id1=getNameResourceID();
-        int id2=other.getNameResourceID();
-        if(id1==0 && id2!=0){
+        int id1 = getNameId();
+        int id2 = other.getNameId();
+        if(id1 == 0 && id2 != 0){
             return 1;
         }
-        if(id2==0 && id1!=0){
+        if(id2 == 0 && id1 != 0){
             return -1;
         }
-        if(id1!=0){
+        if(id1 != 0){
             return Integer.compare(id1, id2);
         }
-        String name1=getName();
-        if(name1==null){
-            name1="";
+        String name1 = getName();
+        if(name1 == null){
+            name1 = "";
         }
-        String name2=other.getName();
-        if(name2==null){
-            name2="";
+        String name2 = other.getName();
+        if(name2 == null){
+            name2 = "";
         }
         return name1.compareTo(name2);
     }
     public void serialize(XmlSerializer serializer) throws IOException {
+        serialize(serializer, true);
+    }
+    public void serialize(XmlSerializer serializer, boolean decode) throws IOException {
         String value;
         if(getValueType() == ValueType.STRING){
-            value = XmlSanitizer.escapeSpecialCharacter(getValueAsString());
-            if(getNameResourceID() == 0 || resolveName() == null){
+            value = getValueAsString();
+            if(value == null) {
+                // Bad string reference, ignore
+                return;
+            }
+            value = XmlSanitizer.escapeSpecialCharacter(value);
+            if(getNameId() == 0 || resolveName() == null){
                 value = XmlSanitizer.escapeDecodedValue(value);
             }
         }else {
-            value = decodeValue();
+            value = decodeValue(decode);
         }
-        serializer.attribute(getUri(), decodeName(false), value);
+        String name;
+        if(decode) {
+            name = decodeName(false);
+        }else {
+            name = getName(false);
+        }
+        String uri;
+        if(decode) {
+            uri = decodeUri();
+        }else {
+            uri = getUri();
+        }
+        serializer.attribute(uri, name, value);
     }
     public ResourceEntry encodeAttributeName(String uri, String prefix, String name) throws IOException {
         setNamespace(uri, prefix);
+        if(!Namespace.isValidUri(uri) || Namespace.isExternalUri(uri)) {
+            setName(name, 0);
+            return null;
+        }
         ResourceEntry resourceEntry = super.encodeAttrName(prefix, name);
         if(resourceEntry != null){
             return resourceEntry;
@@ -561,6 +740,10 @@ public class ResXmlAttribute extends AttributeValue implements Comparable<ResXml
         AttributeBag attributeBag = AttributeBag.create(attrResource.get());
         encodeResult = attributeBag.encode(value);
         if(encodeResult != null){
+            if(encodeResult.valueType == ValueType.STRING){
+                setValueAsString(XmlSanitizer.unEscapeSpecialCharacter(value));
+                return;
+            }
             if(encodeResult.isError()){
                 if(validate){
                     throw new IOException(buildErrorMessage(
@@ -583,62 +766,67 @@ public class ResXmlAttribute extends AttributeValue implements Comparable<ResXml
         System.out.println(buildErrorMessage(error.getError(), value));
     }
     private String buildErrorMessage(String msg, String value){
-        ResXmlElement parent = getParentResXmlElement();
-        return msg + ", at line = " + parent.getStartLineNumber() +", <"+ parent.getName(true) + " "
+        ResXmlElement parent = getParentElement();
+        return msg + ", at line = " + parent.getLineNumber() +", <"+ parent.getName(true) + " "
                 + getName(true) + "=\"" + value + "\"";
     }
 
+    private void setNamespaceFromJson(JSONObject jsonObject) {
+        String uri = jsonObject.optString(ResXmlElement.JSON_uri, null);
+        String prefix = jsonObject.optString(ResXmlElement.JSON_prefix, null);
+        if (uri == null && prefix != null) {
+            throw new JSONException("Provided " + ResXmlElement.JSON_prefix + "="
+                    + prefix + ", but missing: " + ResXmlElement.JSON_uri);
+        }
+        if (prefix == null && uri != null) {
+            throw new JSONException("Provided " + ResXmlElement.JSON_uri + "="
+                    + uri + ", but missing: " + ResXmlElement.JSON_prefix);
+        }
+        setNamespace(uri, prefix);
+    }
     @Override
     public JSONObject toJson() {
-        JSONObject jsonObject= new JSONObject();
-        jsonObject.put(NAME_name, getName());
-        jsonObject.put(NAME_id, getNameResourceID());
-        jsonObject.put(NAME_namespace_uri, getUri());
-        ValueType valueType=getValueType();
-        jsonObject.put(NAME_value_type, valueType.name());
-        if(valueType==ValueType.STRING){
-            jsonObject.put(NAME_data, getValueAsString());
-        }else if(valueType==ValueType.BOOLEAN){
-            jsonObject.put(NAME_data, getValueAsBoolean());
-        }else {
-            jsonObject.put(NAME_data, getData());
+        JSONObject jsonObject = new JSONObject();
+
+        jsonObject.put(ResXmlElement.JSON_name, getName());
+        jsonObject.put(ResXmlElement.JSON_id, getNameId());
+
+        jsonObject.put(ResXmlElement.JSON_uri, getUri());
+        jsonObject.put(ResXmlElement.JSON_prefix, getPrefix());
+
+        JSONObject values = super.toJson();
+        for (String key : values.keySet()) {
+            jsonObject.put(key, values.get(key));
         }
+
         return jsonObject;
     }
     @Override
     public void fromJson(JSONObject json) {
-        String name = json.optString(NAME_name, "");
-        int id =  json.optInt(NAME_id, 0);
+        String name = json.optString(ResXmlElement.JSON_name, "");
+        int id =  json.optInt(ResXmlElement.JSON_id, 0);
         setName(name, id);
-        String uri= json.optString(NAME_namespace_uri, null);
-        if(uri!=null){
-            ResXmlNamespace ns = getParentResXmlElement().getStartNamespaceByUri(uri);
-            if(ns==null){
-                ns = getParentResXmlElement().getRootResXmlElement()
-                        .getOrCreateNamespace(uri, "");
-            }
-            setNamespaceReference(ns.getUriReference());
-        }
-        ValueType valueType=ValueType.fromName(json.getString(NAME_value_type));
-        if(valueType==ValueType.STRING){
-            setValueAsString(json.optString(NAME_data, ""));
-        }else if(valueType==ValueType.BOOLEAN){
-            setValueAsBoolean(json.getBoolean(NAME_data));
-        }else {
-            setValueType(valueType);
-            setData(json.getInt(NAME_data));
-        }
+        setNamespaceFromJson(json);
+        super.fromJson(json);
     }
+    @Deprecated
     public XMLAttribute decodeToXml() {
-        return new XMLAttribute(
-                decodeName(true),
-                decodeValue());
+        return toXml(true);
+    }
+    public XMLAttribute toXml() {
+        return toXml(false);
+    }
+    public XMLAttribute toXml(boolean decode) {
+        if(decode) {
+            return new XMLAttribute(decodeName(false), decodeValue());
+        }
+        return new XMLAttribute(getName(false), decodeValue(false));
     }
     @Override
     public String toString(){
         String fullName = getName(true);
         if(fullName!=null ){
-            int id=getNameResourceID();
+            int id= getNameId();
             if(id!=0){
                 fullName=fullName+"(@"+ HexUtil.toHex8(id)+")";
             }
@@ -671,16 +859,19 @@ public class ResXmlAttribute extends AttributeValue implements Comparable<ResXml
         builder.append("}");
         return builder.toString();
     }
+    @Override
+    public void parse(XmlPullParser parser) throws XmlPullParserException, IOException {
 
-
-
-    public static final String NAME_id = "id";
-    public static final String NAME_name = "name";
-    public static final String NAME_namespace_uri = "namespace_uri";
+    }
 
     private static final int OFFSET_NS = 0;
     private static final int OFFSET_NAME = 4;
     private static final int OFFSET_STRING = 8;
 
     private static final int OFFSET_SIZE = 12;
+
+    public static final int ATTRIBUTE_RESOURCE_ID_id = ObjectsUtil.of(0x010100d0);
+    public static final String ATTRIBUTE_NAME_CLASS = ObjectsUtil.of("class");
+    public static final String ATTRIBUTE_NAME_STYLE = ObjectsUtil.of("style");
+
 }

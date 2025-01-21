@@ -15,101 +15,118 @@
  */
 package com.reandroid.arsc.chunk.xml;
 
-import com.reandroid.arsc.base.BlockCounter;
 import com.reandroid.arsc.coder.XmlSanitizer;
+import com.reandroid.arsc.refactor.ResourceMergeOption;
 import com.reandroid.json.JSONObject;
+import com.reandroid.utils.StringsUtil;
+import com.reandroid.utils.collection.SingleIterator;
+import com.reandroid.xml.XMLNode;
 import com.reandroid.xml.XMLText;
+import com.reandroid.xml.XMLUtil;
+import com.reandroid.xml.base.Text;
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
 import org.xmlpull.v1.XmlSerializer;
 
 import java.io.IOException;
+import java.util.Iterator;
 
-public class ResXmlTextNode extends ResXmlNode {
-    private final ResXmlText resXmlText;
+public class ResXmlTextNode extends ResXmlNode implements Text {
+
     private String mIndentText;
-    public ResXmlTextNode(ResXmlText resXmlText) {
-        super(1);
-        this.resXmlText = resXmlText;
-        addChild(0, resXmlText);
-    }
+    
     public ResXmlTextNode() {
-        this(new ResXmlText());
-    }
-    ResXmlText getResXmlText() {
-        return resXmlText;
-    }
-    public int getLineNumber(){
-        return getResXmlText().getLineNumber();
+        super(new ResXmlTextChunk());
     }
 
-    public void autoSetLineNumber(){
-        ResXmlElement root = getParentResXmlElement();
-        if(root == null){
-            return;
-        }
-        root = root.getRootResXmlElement();
-        BlockCounter counter = new BlockCounter(this);
-        root.calculateLineNumber(counter, true);
-        setLineNumber(counter.getCount());
+    public boolean isEmpty() {
+        return StringsUtil.isEmpty(getText());
     }
+    public boolean isBlank() {
+        return StringsUtil.isBlank(getText());
+    }
+
     @Override
-    void calculateLineNumber(BlockCounter counter, boolean startLine){
-        if(counter.FOUND){
+    ResXmlTextChunk getChunk() {
+        return (ResXmlTextChunk) super.getChunk();
+    }
+    void makeIndent(int length){
+        if (!isIndent()) {
+            throw new IllegalArgumentException("Not indent text: '" + getText() + "'");
+        }
+        if (length < 2) {
+            setText("\n");
             return;
         }
-        if(startLine && counter.END == this){
-            counter.FOUND = true;
-            return;
+        char[] chars = new char[length];
+        chars[0] = '\n';
+        for(int i = 1; i < length; i++){
+            chars[i] = ' ';
         }
+        setText(new String(chars));
+    }
+    public boolean isIndent(){
+        return isIndent(getText());
+    }
+
+    @Override
+    int autoSetLineNumber(int start){
         String text = getText();
-        if(text == null){
-            return;
+        int lineNumber = start;
+        if (isIndent(text) && isNextElement()){
+            lineNumber ++;
+        } else {
+            start += countNewLines(text);
         }
-        int result = 1;
-        char[] chars = text.toCharArray();
-        for(char ch : chars){
-            if(ch == '\n'){
-                result ++;
-            }
+        setLineNumber(lineNumber);
+        return start;
+    }
+    private boolean isNextElement(){
+        ResXmlNodeTree parent = getParentNode();
+        if(parent != null){
+            return parent.get(getIndex() + 1) instanceof ResXmlElement;
         }
-        counter.addCount(result);
-        if(counter.END == this){
-            counter.FOUND = true;
-        }
+        return false;
     }
     public String getComment() {
-        return getResXmlText().getComment();
+        return getChunk().getComment();
     }
-    @Override
-    public int getDepth(){
-        ResXmlElement parent = getParentResXmlElement();
-        if(parent!=null){
-            return parent.getDepth() + 1;
-        }
-        return 0;
-    }
-    @Override
-    void addEvents(ParserEventList parserEventList){
-        String comment = getComment();
-        if(comment!=null){
-            parserEventList.add(
-                    new ParserEvent(ParserEvent.COMMENT, this, comment, false));
-        }
-        parserEventList.add(new ParserEvent(ParserEvent.TEXT, this));
-    }
-    public ResXmlElement getParentResXmlElement(){
-        return getResXmlText().getParentResXmlElement();
+    public void setComment(String comment) {
+        getChunk().setComment(comment);
     }
 
-    public void setLineNumber(int lineNumber){
-        getResXmlText().setLineNumber(lineNumber);
+    @Override
+    Iterator<ResXmlEvent> getParserEvents() {
+        return SingleIterator.of(ResXmlEvent.text(this));
+    }
+
+    @Override
+    public ResXmlNodeTree getParentNode() {
+        return (ResXmlNodeTree) super.getParentNode();
+    }
+
+    @Override
+    public int getStartLineNumber() {
+        return getChunk().getLineNumber();
+    }
+    @Override
+    public int getEndLineNumber() {
+        int line = getStartLineNumber();
+        if (!isIndent()) {
+            line += countNewLines(getText());
+        }
+        return line;
+    }
+
+    @Override
+    public void setLineNumber(int lineNumber) {
+        getChunk().setLineNumber(lineNumber);
     }
     public String getText(){
-        return getResXmlText().getText();
+        return getChunk().getText();
     }
     public void setText(String text){
-        getResXmlText().setText(text);
+        getChunk().setText(text);
         mIndentText = null;
     }
     public void append(String text){
@@ -129,100 +146,144 @@ public class ResXmlTextNode extends ResXmlNode {
 
     @Override
     public boolean isNull() {
-        return getResXmlText().isNull();
+        return getChunk().isNull();
+    }
+    @Override
+    public boolean removeSelf() {
+        ResXmlNodeTree parentNode = getParentNode();
+        if (parentNode != null) {
+            return parentNode.remove(this);
+        }
+        return false;
     }
 
     @Override
-    void onRemoved(){
-        getResXmlText().onRemoved();
+    void onPreRemove() {
+        getChunk().onPreRemove();
     }
     @Override
-    void linkStringReferences(){
-        getResXmlText().linkStringReferences();
+    void linkStringReferences() {
+        getChunk().linkStringReferences();
     }
     @Override
-    public void serialize(XmlSerializer serializer) throws IOException {
-        if(isNull()){
-            return;
+    public void serialize(XmlSerializer serializer, boolean decode) throws IOException {
+        serializeComment(serializer, getComment());
+        if (!isNull()) {
+            serializer.text(getText());
         }
-        serializer.text(getText());
     }
+
     @Override
     public void parse(XmlPullParser parser) throws IOException, XmlPullParserException {
         setLineNumber(parser.getLineNumber());
+        while (true) {
+            if (!parseNextText(parser)) {
+                break;
+            }
+        }
+        if (isNull()) {
+            removeSelf();
+        }
+    }
+    private boolean parseNextText(XmlPullParser parser) throws IOException, XmlPullParserException {
+        setLineNumber(parser.getLineNumber());
         String text;
         int event = parser.getEventType();
-        if(event == XmlPullParser.ENTITY_REF){
-            text = decodeEntityRef(parser.getText());
-        }else if(event == XmlPullParser.TEXT){
+        if (event == XmlPullParser.ENTITY_REF) {
+            text = XMLUtil.decodeEntityRef(parser.getText());
+        } else if(event == XmlPullParser.TEXT ||
+                event == XmlPullParser.IGNORABLE_WHITESPACE) {
             text = parser.getText();
             text = XmlSanitizer.unEscapeUnQuote(text);
-        }else {
+        } else {
             throw new XmlPullParserException("Invalid text event: "
                     + event + ", " + parser.getPositionDescription());
         }
         append(text);
+        event = parser.next();
+        return isTextEvent(event);
     }
 
     @Override
+    public XMLNode toXml(boolean decode) {
+        return new XMLText(getText());
+    }
+
+    @Override
+    public void merge(ResXmlNode xmlNode) {
+        if (xmlNode == this) {
+            return;
+        }
+        ResXmlTextNode coming = (ResXmlTextNode) xmlNode;
+        setText(coming.getText());
+        setComment(coming.getComment());
+        setLineNumber(coming.getLineNumber());
+    }
+
+    public void mergeWithName(ResourceMergeOption mergeOption, ResXmlNode xmlNode) {
+        this.merge(xmlNode);
+    }
+
+    @Override
+    public boolean isText() {
+        return true;
+    }
+
+    @Override
+    String nodeTypeName() {
+        return JSON_node_type_text;
+    }
+    @Override
     public JSONObject toJson() {
-        JSONObject jsonObject=new JSONObject();
-        jsonObject.put(NAME_node_type, NAME_text);
-        jsonObject.put(NAME_text, getText());
+        JSONObject jsonObject = new JSONObject();
+        jsonObject.put(JSON_node_type, nodeTypeName());
+        jsonObject.put(JSON_line, getLineNumber());
+        jsonObject.put(JSON_value, getText());
+        jsonObject.put(JSON_comment, getComment());
         return jsonObject;
     }
     @Override
     public void fromJson(JSONObject json) {
-        setText(json.optString(NAME_text, null));
-        setLineNumber(getParentResXmlElement().getStartLineNumber());
-    }
-    public XMLText decodeToXml() {
-        XMLText xmlText=new XMLText(XmlSanitizer.escapeSpecialCharacter(getText()));
-        xmlText.setLineNumber(getLineNumber());
-        return xmlText;
-    }
-    @Override
-    public String toString(){
-        return "line = " + getLineNumber() + ", \"" + getText() + "\"";
+        setText(json.optString(JSON_value, null));
+        setComment(json.optString(JSON_comment, null));
+        setLineNumber(json.optInt(JSON_line));
     }
 
-    private static String decodeEntityRef(String entityRef) {
-        if(entityRef == null){
-            return "";
-        }
-        String decode;
-        if(entityRef.equals("lt")){
-            decode = "<";
-        }else if(entityRef.equals("gt")){
-            decode = ">";
-        }else if(entityRef.equals("amp")){
-            decode = "&";
-        }else if(entityRef.equals("quote")){
-            decode = "\"";
-        }else {
-            decode = "&" + entityRef + ";";
-        }
-        return decode;
+    @Override
+    public String toString() {
+        String text = getText();
+        return text == null ? "null" : text;
     }
-    static boolean isTextEvent(int event){
-        return event == XmlPullParser.TEXT
-                || event == XmlPullParser.ENTITY_REF;
+
+    private static int countNewLines(String text) {
+        if (text == null) {
+            return 0;
+        }
+        int result = 0;
+        int length = text.length();
+        for (int i = 1; i < length; i++) {
+            if (text.charAt(i) == '\n') {
+                i ++;
+            }
+        }
+        return result;
     }
-    private static boolean isIndent(String text){
-        if(text.length() == 0){
+    private static boolean isIndent(String text) {
+        if (text == null) {
             return true;
         }
-        char[] chars = text.toCharArray();
-        if(chars[0] != '\n'){
+        int length = text.length();
+        if (length == 0) {
+            return true;
+        }
+        if(text.charAt(0) != '\n') {
             return false;
         }
-        for(int i = 1; i < chars.length; i++){
-            if(chars[i] != ' '){
+        for(int i = 1; i < length; i++){
+            if (!StringsUtil.isWhiteSpace(text.charAt(i))) {
                 return false;
             }
         }
         return true;
     }
-
-    public static final String NAME_text="text";
 }

@@ -16,12 +16,8 @@
 package com.reandroid.arsc.chunk.xml;
 
 import com.reandroid.arsc.chunk.PackageBlock;
-import com.reandroid.arsc.chunk.TableBlock;
-import com.reandroid.arsc.coder.*;
-import com.reandroid.arsc.model.ResourceEntry;
 import com.reandroid.arsc.model.ResourceLibrary;
-import com.reandroid.arsc.value.*;
-import com.reandroid.arsc.value.attribute.AttributeBag;
+import com.reandroid.xml.XMLUtil;
 import org.xmlpull.v1.XmlSerializer;
 
 import java.io.IOException;
@@ -96,9 +92,9 @@ public class ResXmlPullSerializer implements XmlSerializer {
         ResXmlElement element = mCurrentElement;
         if(element == null){
             ResXmlDocument document =  getCurrentDocument();
-            element = document.getResXmlElement();
+            element = document.getDocumentElement();
             if(element == null){
-                element = document.createRootElement(null);
+                element = document.newElement();
             }
             mCurrentElement = element;
         }
@@ -165,7 +161,7 @@ public class ResXmlPullSerializer implements XmlSerializer {
             // TODO: throw?
             return null;
         }
-        ResXmlNamespace resXmlNamespace = element.getNamespaceByUri(namespace);
+        ResXmlNamespace resXmlNamespace = element.getNamespaceForUri(namespace);
         if(resXmlNamespace == null && generatePrefix){
             String prefix;
             if(namespace.equals(ResourceLibrary.URI_ANDROID)){
@@ -217,7 +213,7 @@ public class ResXmlPullSerializer implements XmlSerializer {
             prefix = name.substring(0, i);
             name = name.substring(i + 1);
         }else {
-            ResXmlNamespace xmlNamespace = element.getNamespaceByUri(namespace);
+            ResXmlNamespace xmlNamespace = element.getNamespaceForUri(namespace);
             if(xmlNamespace != null){
                 prefix = xmlNamespace.getPrefix();
             }
@@ -225,10 +221,11 @@ public class ResXmlPullSerializer implements XmlSerializer {
         if(element.getName() == null){
             element.setName(name);
         }else {
-            element = element.createChildElement(name);
+            element = element.newElement();
             mCurrentElement = element;
+            element.setName(name);
         }
-        element.setTagNamespace(namespace, prefix);
+        element.setNamespace(namespace, prefix);
         mCurrentElement = element;
         return this;
     }
@@ -243,7 +240,7 @@ public class ResXmlPullSerializer implements XmlSerializer {
             name = name.substring(i + 1);
         }
         if(prefix == null){
-            ResXmlNamespace resXmlNamespace = element.getStartNamespaceByUri(namespace);
+            ResXmlNamespace resXmlNamespace = element.getNamespaceForUri(namespace);
             if(resXmlNamespace != null){
                 prefix = resXmlNamespace.getPrefix();
             }
@@ -256,8 +253,7 @@ public class ResXmlPullSerializer implements XmlSerializer {
     @Override
     public ResXmlPullSerializer endTag(String namespace, String name) throws IOException, IllegalArgumentException, IllegalStateException {
         flushText();
-        mCurrentElement.calculatePositions();
-        mCurrentElement = mCurrentElement.getParentResXmlElement();
+        mCurrentElement = mCurrentElement.getParentElement();
         return this;
     }
 
@@ -279,17 +275,7 @@ public class ResXmlPullSerializer implements XmlSerializer {
 
     @Override
     public void entityRef(String text) throws IOException, IllegalArgumentException, IllegalStateException {
-        String decoded;
-        if("lt".equals(text)){
-            decoded = "<";
-        }else if("gt".equals(text)){
-            decoded = ">";
-        }else if("amp".equals(text)){
-            decoded = "&";
-        }else {
-            decoded = text;
-        }
-        appendText(decoded);
+        appendText(XMLUtil.decodeEntityRef(text));
     }
 
     @Override
@@ -328,7 +314,7 @@ public class ResXmlPullSerializer implements XmlSerializer {
             return;
         }
         ResXmlElement element = getCurrentElement();
-        element.addResXmlText(text);
+        element.newText().setText(text);
     }
     private void appendText(String text){
         if(text == null){

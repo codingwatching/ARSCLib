@@ -15,21 +15,23 @@
   */
 package com.reandroid.apk;
 
-import com.reandroid.archive.ZipEntryMap;
+import com.reandroid.app.AndroidManifest;
 import com.reandroid.archive.InputSource;
+import com.reandroid.archive.ZipEntryMap;
 import com.reandroid.arsc.chunk.TableBlock;
 import com.reandroid.arsc.chunk.xml.AndroidManifestBlock;
 import com.reandroid.arsc.chunk.xml.ResXmlAttribute;
 import com.reandroid.arsc.chunk.xml.ResXmlElement;
 import com.reandroid.arsc.chunk.xml.ResXmlNode;
-import com.reandroid.arsc.model.ResourceEntry;
 import com.reandroid.arsc.io.BlockReader;
-import com.reandroid.arsc.pool.ResXmlStringPool;
 import com.reandroid.arsc.model.FrameworkTable;
+import com.reandroid.arsc.model.ResourceEntry;
+import com.reandroid.arsc.pool.ResXmlStringPool;
 import com.reandroid.arsc.value.*;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.function.Predicate;
 import java.util.zip.ZipEntry;
 
  public class FrameworkOptimizer {
@@ -52,8 +54,8 @@ import java.util.zip.ZipEntry;
         }
         FrameworkTable frameworkTable = getFrameworkTable();
         AndroidManifestBlock manifestBlock = null;
-        if(frameworkApk.hasAndroidManifestBlock()){
-            manifestBlock = frameworkApk.getAndroidManifestBlock();
+        if(frameworkApk.hasAndroidManifest()){
+            manifestBlock = frameworkApk.getAndroidManifest();
         }
         optimizeTable(frameworkTable, manifestBlock);
         UncompressedFiles uncompressedFiles = frameworkApk.getUncompressedFiles();
@@ -130,17 +132,17 @@ import java.util.zip.ZipEntry;
     private void compressManifest(AndroidManifestBlock manifestBlock){
         logMessage("Compressing manifest ...");
         int prev = manifestBlock.countBytes();
-        ResXmlElement manifest = manifestBlock.getResXmlElement();
-        List<ResXmlNode> removeList = getManifestElementToRemove(manifest);
-        for(ResXmlNode node:removeList){
-            manifest.removeNode(node);
-        }
+        ResXmlElement manifest = manifestBlock.getDocumentElement();
+        manifest.removeIf(new Predicate<ResXmlNode>() {
+            @Override
+            public boolean test(ResXmlNode xmlNode) {
+                return !(xmlNode instanceof ResXmlElement) ||
+                        !((ResXmlElement) xmlNode).equalsName(AndroidManifest.TAG_application);
+            }
+        });
         ResXmlElement application = manifestBlock.getApplicationElement();
         if(application!=null){
-            removeList = application.listXmlNodes();
-            for(ResXmlNode node:removeList){
-                application.removeNode(node);
-            }
+            application.clear();
         }
         ResXmlStringPool stringPool = manifestBlock.getStringPool();
         stringPool.removeUnusedStrings();
@@ -148,20 +150,6 @@ import java.util.zip.ZipEntry;
         long diff=prev - manifestBlock.countBytes();
         long percent=(diff*100L)/prev;
         logMessage("Manifest size reduced by: "+percent+" %");
-    }
-    private List<ResXmlNode> getManifestElementToRemove(ResXmlElement manifest){
-        List<ResXmlNode> results = new ArrayList<>();
-        for(ResXmlNode node:manifest.listXmlNodes()){
-            if(!(node instanceof ResXmlElement)){
-                continue;
-            }
-            ResXmlElement element = (ResXmlElement)node;
-            if(AndroidManifestBlock.TAG_application.equals(element.getName())){
-                continue;
-            }
-            results.add(element);
-        }
-        return results;
     }
     private void backupManifestValue(AndroidManifestBlock manifestBlock, TableBlock tableBlock){
         logMessage("Backup manifest values ...");
@@ -177,7 +165,7 @@ import java.util.zip.ZipEntry;
             }
         }
 
-        ResXmlElement element = manifestBlock.getResXmlElement();
+        ResXmlElement element = manifestBlock.getDocumentElement();
         backupAttributeValues(tableBlock, element);
 
         if(iconAttribute!=null){
@@ -185,14 +173,17 @@ import java.util.zip.ZipEntry;
         }
     }
     private void backupAttributeValues(TableBlock tableBlock, ResXmlElement element){
-        if(element==null){
+        if(element == null){
             return;
         }
-        for(ResXmlAttribute attribute: element.listAttributes()){
+        Iterator<ResXmlAttribute> attributes = element.getAttributes();
+        while (attributes.hasNext()){
+            ResXmlAttribute attribute = attributes.next();
             backupAttributeValues(tableBlock, attribute);
         }
-        for(ResXmlElement child: element.listElements()){
-            backupAttributeValues(tableBlock, child);
+        Iterator<ResXmlElement> iterator = element.getElements();
+        while (iterator.hasNext()){
+            backupAttributeValues(tableBlock, iterator.next());
         }
     }
     private void backupAttributeValues(TableBlock tableBlock, ResXmlAttribute attribute){

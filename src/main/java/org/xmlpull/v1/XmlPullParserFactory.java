@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
+@SuppressWarnings({"deprecation", "unchecked"})
 public class XmlPullParserFactory {
     public static final String PROPERTY_NAME = "org.xmlpull.v1.XmlPullParserFactory";
     protected ArrayList parserClasses;
@@ -16,8 +17,8 @@ public class XmlPullParserFactory {
         parserClasses = new ArrayList<String>();
         serializerClasses = new ArrayList<String>();
         try {
-            parserClasses.add(Class.forName("com.android.org.kxml2.io.KXmlParser"));
-            serializerClasses.add(Class.forName("com.android.org.kxml2.io.KXmlSerializer"));
+            parserClasses.add(Class.forName("com.reandroid.xml.kxml2.KXmlParser"));
+            serializerClasses.add(Class.forName("com.reandroid.xml.kxml2.KXmlSerializer"));
         } catch (ClassNotFoundException e) {
             throw new AssertionError();
         }

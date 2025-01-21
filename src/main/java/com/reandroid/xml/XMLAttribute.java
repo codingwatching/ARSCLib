@@ -15,13 +15,14 @@
  */
 package com.reandroid.xml;
 
+import com.reandroid.common.Namespace;
+import com.reandroid.xml.base.Attribute;
 import org.xmlpull.v1.XmlSerializer;
 
 import java.io.IOException;
-import java.util.Iterator;
 import java.util.Objects;
 
-public class XMLAttribute extends XMLNode {
+public class XMLAttribute extends XMLNode implements Attribute {
     private String mName;
     private String mValue;
     private XMLNamespace mNamespace;
@@ -34,18 +35,8 @@ public class XMLAttribute extends XMLNode {
         mValue = value;
     }
     @Override
-    XMLAttribute clone(XMLNode parent){
-        XMLAttribute attribute = new XMLAttribute();
-        attribute.setParent(parent);
-        attribute.setName(getUri(), getPrefix(), getName(false));
-        if(parent instanceof XMLElement){
-            ((XMLElement)parent).addAttribute(attribute);
-        }
-        return attribute;
-    }
-    @Override
-    public XMLElement getParent(){
-        return (XMLElement) super.getParent();
+    public XMLElement getParentNode(){
+        return (XMLElement) super.getParentNode();
     }
     public boolean equalsName(String name){
         if(name == null){
@@ -74,22 +65,27 @@ public class XMLAttribute extends XMLNode {
     public XMLNamespace getNamespace(){
         return mNamespace;
     }
-    public void setNamespace(XMLNamespace namespace){
-        this.mNamespace = namespace;
+    public void setNamespace(Namespace namespace){
+        this.mNamespace = (XMLNamespace) namespace;
+    }
+    public void setNamespaceFrom(Namespace namespace) {
+        String uri;
+        String prefix;
+        if (namespace != null) {
+            uri = namespace.getUri();
+            prefix = namespace.getPrefix();
+        } else {
+            uri = null;
+            prefix = null;
+        }
+        setNamespace(uri, prefix);
     }
     public void setNamespace(String uri, String prefix){
-        XMLElement element = getParent();
+        XMLElement element = getParentNode();
         if(element == null){
             throw new IllegalArgumentException("Parent element is null");
         }
         setNamespace(element.getOrCreateXMLNamespace(uri, prefix));
-    }
-    public String getUri(){
-        XMLNamespace namespace = getNamespace();
-        if(namespace != null){
-            return namespace.getUri();
-        }
-        return null;
     }
     public String getPrefix(){
         XMLNamespace namespace = getNamespace();
@@ -103,10 +99,10 @@ public class XMLAttribute extends XMLNode {
         }
         return null;
     }
-    public String getValue(){
-        return getValue(false);
+    public String getValueAsString(){
+        return getValueAsString(false);
     }
-    public String getValue(boolean escapeXmlText){
+    public String getValueAsString(boolean escapeXmlText){
         String value = this.mValue;
         if(value == null){
             value = "";
@@ -116,6 +112,11 @@ public class XMLAttribute extends XMLNode {
             return XMLUtil.escapeXmlChars(value);
         }
         return value;
+    }
+    void setFrom(XMLAttribute xmlAttribute) {
+        set(xmlAttribute.getName(true),
+                xmlAttribute.getValueAsString(false));
+        setNamespaceFrom(xmlAttribute.getNamespace());
     }
     XMLAttribute set(String name, String value){
         this.mName = name;
@@ -136,7 +137,7 @@ public class XMLAttribute extends XMLNode {
         if(XMLUtil.isEmpty(uri)){
             uri = null;
         }
-        XMLElement element = getParent();
+        XMLElement element = getParentNode();
         if(element == null){
             throw new IllegalArgumentException("Parent element is null");
         }
@@ -166,7 +167,7 @@ public class XMLAttribute extends XMLNode {
         if(Objects.equals(prefix, getPrefix())){
             return;
         }
-        XMLElement element = getParent();
+        XMLElement element = getParentNode();
         if(element == null){
             throw new IllegalArgumentException("Parent element is null");
         }
@@ -175,7 +176,7 @@ public class XMLAttribute extends XMLNode {
 
     @Override
     public void serialize(XmlSerializer serializer) throws IOException {
-        serializer.attribute(getUri(), getName(), getValue(false));
+        serializer.attribute(getUri(), getName(), getValueAsString(false));
     }
     @Override
     void write(Appendable appendable, boolean xml, boolean escapeXmlText) throws IOException {
@@ -184,7 +185,7 @@ public class XMLAttribute extends XMLNode {
         if(xml){
             appendable.append('"');
         }
-        appendable.append(getValue(escapeXmlText));
+        appendable.append(getValueAsString(escapeXmlText));
         if(xml){
             appendable.append('"');
         }
@@ -202,7 +203,7 @@ public class XMLAttribute extends XMLNode {
         length += name.length();
         appendable.append('=');
         appendable.append('"');
-        String value = XMLUtil.escapeXmlChars(getValue());
+        String value = XMLUtil.escapeXmlChars(getValueAsString());
         if(value == null){
             value = "null";
         }

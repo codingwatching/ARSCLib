@@ -15,16 +15,23 @@
  */
 package com.reandroid.apk;
 
+import com.reandroid.archive.ArchiveInfo;
 import com.reandroid.archive.InputSource;
+import com.reandroid.archive.ZipEntryMap;
 import com.reandroid.archive.block.ApkSignatureBlock;
 import com.reandroid.arsc.chunk.PackageBlock;
 import com.reandroid.arsc.chunk.TableBlock;
+import com.reandroid.dex.model.DexDirectory;
+import com.reandroid.dex.sections.Marker;
 import com.reandroid.identifiers.PackageIdentifier;
 import com.reandroid.identifiers.TableIdentifier;
+import com.reandroid.json.JSONArray;
+import com.reandroid.json.JSONObject;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
@@ -43,7 +50,9 @@ public abstract class ApkModuleDecoder extends ApkModuleCoder{
     }
     public final void decode(File mainDirectory) throws IOException{
         initialize();
+        decodeArchiveInfo(mainDirectory);
         decodeUncompressedFiles(mainDirectory);
+
         decodeAndroidManifest(mainDirectory);
         decodeResourceTable(mainDirectory);
         decodeDexFiles(mainDirectory);
@@ -65,6 +74,29 @@ public abstract class ApkModuleDecoder extends ApkModuleCoder{
             addDecodedPath(inputSource.getAlias());
         }
     }
+    public void decodeDexInfo(File mainDirectory)
+            throws IOException {
+        File file = new File(mainDirectory, "dex-info.json");
+        logMessage("Decode: " + file.getName());
+        ZipEntryMap zipEntryMap = apkModule.getZipEntryMap();
+        DexDirectory dexDirectory = DexDirectory.readStrings(zipEntryMap);
+        JSONObject jsonObject = new JSONObject();
+        JSONArray jsonArray = new JSONArray();
+        Iterator<Marker> markers = dexDirectory.getMarkers();
+        while (markers.hasNext()){
+            jsonArray.put(markers.next().getJsonObject());
+        }
+        jsonObject.put("markers", jsonArray);
+        jsonObject.write(file);
+    }
+    public void decodeArchiveInfo(File mainDirectory)
+            throws IOException {
+        File file = new File(mainDirectory, ArchiveInfo.JSON_FILE);
+        logMessage("Decode: " + file.getName());
+        ZipEntryMap zipEntryMap = apkModule.getZipEntryMap();
+        ArchiveInfo archiveInfo = zipEntryMap.getOrCreateArchiveInfo();
+        archiveInfo.writeToDirectory(mainDirectory);
+    }
     public void decodeUncompressedFiles(File mainDirectory)
             throws IOException {
         File file = new File(mainDirectory, UncompressedFiles.JSON_FILE);
@@ -75,20 +107,12 @@ public abstract class ApkModuleDecoder extends ApkModuleCoder{
         uncompressedFiles.toJson().write(file);
     }
     public void decodeDexFiles(File mainDir) throws IOException {
-        List<DexFileInputSource> dexList = getApkModule().listDexFiles();
-        decodeDexFiles(dexList, mainDir);
-    }
-    public void decodeDexFiles(List<DexFileInputSource> dexList, File mainDir) throws IOException {
-        for(DexFileInputSource dexFileInputSource : dexList){
-            decodeDexFile(dexFileInputSource, mainDir);
-        }
-    }
-    public void decodeDexFile(DexFileInputSource dexFileInputSource, File mainDir) throws IOException {
-        String path = dexFileInputSource.getAlias();
+        ApkModule apkModule = getApkModule();
+        List<DexFileInputSource> dexList = apkModule.listDexFiles();
         DexDecoder dexDecoder = getDexDecoder();
-        boolean decoded = dexDecoder.decodeDex(dexFileInputSource, mainDir);
-        if(decoded){
-            addDecodedPath(path);
+        dexDecoder.decodeDex(apkModule, mainDir);
+        for(DexFileInputSource inputSource : dexList) {
+            addDecodedPath(inputSource.getAlias());
         }
     }
     @Override
@@ -180,8 +204,9 @@ public abstract class ApkModuleDecoder extends ApkModuleCoder{
             logMessage("All resource names are valid");
             return;
         }
-        int removed = tableBlock.removeUnusedSpecs();
-        msg = msg + ", removed specs = " + removed;
+        if(tableBlock.removeUnusedSpecs()) {
+            msg = msg + ", removed specs";
+        }
         logMessage(msg);
     }
     public void validateResourceNames(PackageBlock packageBlock){
@@ -193,12 +218,20 @@ public abstract class ApkModuleDecoder extends ApkModuleCoder{
             logMessage("[" + packageBlock.getName() + "] All resource names are valid");
             return;
         }
-        int removed = packageBlock.removeUnusedSpecs();
-        msg = "[" + packageBlock.getName() + "]" + msg + ", removed specs = " + removed;
-        logMessage(msg);
+        if(packageBlock.removeUnusedSpecs()) {
+            msg = "[" + packageBlock.getName() + "]" + msg + ", removed specs";
+            logMessage(msg);
+        }
     }
     void initialize(){
         mDecodedPaths.clear();
+        ensureTableBlock();
+    }
+    private void ensureTableBlock(){
+        ApkModule apkModule = getApkModule();
+        if(apkModule.ensureTableBlock()){
+            logMessage("Missing " + TableBlock.FILE_NAME + ", created empty");
+        }
     }
 
     public boolean isLogErrors() {

@@ -19,14 +19,14 @@ import com.reandroid.arsc.array.LibraryInfoArray;
 import com.reandroid.arsc.header.LibraryHeader;
 import com.reandroid.arsc.value.LibraryInfo;
 
-import java.util.Collection;
+import java.util.Iterator;
 
-public class LibraryBlock extends Chunk<LibraryHeader> {
+public class LibraryBlock extends Chunk<LibraryHeader> implements Iterable<LibraryInfo> {
     private final LibraryInfoArray mLibraryInfoArray;
     public LibraryBlock() {
         super(new LibraryHeader(),1);
         LibraryHeader header = getHeaderBlock();
-        this.mLibraryInfoArray = new LibraryInfoArray(header.getCount());
+        this.mLibraryInfoArray = new LibraryInfoArray(header.getCountItem());
 
         addChild(mLibraryInfoArray);
     }
@@ -36,9 +36,6 @@ public class LibraryBlock extends Chunk<LibraryHeader> {
             return false;
         }
         return getLibraryInfoArray().containsLibraryInfo(packageName);
-    }
-    public boolean isEmpty(){
-        return getLibraryCount() == 0;
     }
     public LibraryInfoArray getLibraryInfoArray(){
         return mLibraryInfoArray;
@@ -52,33 +49,40 @@ public class LibraryBlock extends Chunk<LibraryHeader> {
         }
     }
     public void addLibraryInfo(LibraryInfo info){
-        if(info==null){
+        if(info == null){
             return;
         }
         getLibraryInfoArray().add(info);
-        getHeaderBlock().getCount().set(mLibraryInfoArray.childesCount());
+        getHeaderBlock().getCountItem().set(mLibraryInfoArray.size());
     }
-    public Collection<LibraryInfo> listLibraryInfo(){
-        return getLibraryInfoArray().listItems();
+    public LibraryInfo newLibraryInfo() {
+        return mLibraryInfoArray.createNext();
+    }
+    public int size() {
+        return mLibraryInfoArray.size();
+    }
+    @Override
+    public Iterator<LibraryInfo> iterator() {
+        return getLibraryInfoArray().iterator(true);
     }
     @Override
     public boolean isNull(){
-        return mLibraryInfoArray.childesCount()==0;
+        return isEmpty();
     }
-    public int getLibraryCount(){
-        return mLibraryInfoArray.childesCount();
+    public boolean isEmpty(){
+        return !iterator().hasNext();
     }
     public void setLibraryCount(int count){
-        getHeaderBlock().getCount().set(count);
-        mLibraryInfoArray.setChildesCount(count);
+        getHeaderBlock().getCountItem().set(count);
+        mLibraryInfoArray.setSize(count);
     }
     @Override
     protected void onChunkRefreshed() {
-        getHeaderBlock().getCount().set(mLibraryInfoArray.childesCount());
+        getHeaderBlock().getCountItem().set(mLibraryInfoArray.size());
     }
 
     public void merge(LibraryBlock libraryBlock){
-        if(libraryBlock==null||libraryBlock==this){
+        if(libraryBlock == null || libraryBlock == this){
             return;
         }
         getLibraryInfoArray().merge(libraryBlock.getLibraryInfoArray());

@@ -22,8 +22,10 @@ import com.reandroid.arsc.coder.ValueCoder;
 import com.reandroid.arsc.model.ResourceEntry;
 import com.reandroid.arsc.pool.TableStringPool;
 import com.reandroid.json.JSONObject;
+import com.reandroid.utils.collection.ComputeIterator;
 
 import java.util.Iterator;
+import java.util.List;
 
 public abstract class CompoundEntry<ITEM extends ResValueMap, ARRAY extends CompoundItemArray<ITEM>>
         extends TableEntry<EntryHeaderMap, ARRAY> implements Iterable<ITEM>{
@@ -31,6 +33,10 @@ public abstract class CompoundEntry<ITEM extends ResValueMap, ARRAY extends Comp
         super(new EntryHeaderMap(), mapArray);
     }
 
+    @Override
+    public Iterator<ValueItem> allValues(){
+        return new ComputeIterator<>(iterator(), item -> item);
+    }
     @Override
     public Iterator<ITEM> iterator(){
         return getValue().iterator();
@@ -51,9 +57,9 @@ public abstract class CompoundEntry<ITEM extends ResValueMap, ARRAY extends Comp
         return getValue().getByType(attributeType);
     }
     public void refresh(){
-        getHeader().setValuesCount(getValue().childesCount());
+        getHeader().setValuesCount(getValue().size());
     }
-    public ITEM[] listResValueMap(){
+    public List<ITEM> listResValueMap(){
         return getValue().getChildes();
     }
 
@@ -74,11 +80,11 @@ public abstract class CompoundEntry<ITEM extends ResValueMap, ARRAY extends Comp
         getHeader().setParentId(parentId);
     }
     public int childesCount(){
-        return getValue().childesCount();
+        return getValue().size();
     }
     public void setValuesCount(int valuesCount){
         getHeader().setValuesCount(valuesCount);
-        getValue().setChildesCount(valuesCount);
+        getValue().setSize(valuesCount);
     }
     public ResourceEntry resolveParentId(){
         int id = getParentId();
@@ -110,7 +116,7 @@ public abstract class CompoundEntry<ITEM extends ResValueMap, ARRAY extends Comp
     }
     @Override
     void onHeaderLoaded(ARRAY value, EntryHeaderMap header){
-        value.setChildesCount(header.getValuesCount());
+        value.setSize(header.getValuesCount());
     }
 
     @Override
@@ -137,15 +143,15 @@ public abstract class CompoundEntry<ITEM extends ResValueMap, ARRAY extends Comp
     public String toString(){
         StringBuilder builder = new StringBuilder();
         builder.append(getHeader());
-        ITEM[] valueMaps = listResValueMap();
-        int len = valueMaps.length;
+        List<ITEM> valueMaps = listResValueMap();
+        int len = valueMaps.size();
         int max = len;
         if(max>4){
             max = 4;
         }
         for(int i=0;i<max;i++){
             builder.append("\n    ");
-            builder.append(valueMaps[i]);
+            builder.append(valueMaps.get(i));
         }
         if(len>0){
             if(max!=len){

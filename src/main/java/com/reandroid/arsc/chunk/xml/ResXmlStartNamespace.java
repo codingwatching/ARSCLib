@@ -16,21 +16,57 @@
 package com.reandroid.arsc.chunk.xml;
 
 import com.reandroid.arsc.chunk.ChunkType;
-import com.reandroid.xml.XMLNamespace;
+import com.reandroid.arsc.item.ResXmlString;
+import com.reandroid.arsc.model.ResourceLibrary;
+import com.reandroid.arsc.pool.ResXmlStringPool;
+import com.reandroid.json.JSONConvert;
+import com.reandroid.json.JSONObject;
+import com.reandroid.utils.StringsUtil;
 
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.Set;
 
-public class ResXmlStartNamespace extends ResXmlNamespaceChunk {
+public class ResXmlStartNamespace extends ResXmlNamespaceChunk
+        implements JSONConvert<JSONObject> {
+
     private final Set<ResXmlAttribute> mReferencedAttributes;
     private final Set<ResXmlStartElement> mReferencedElements;
+    private final ResXmlEndNamespace mEndNamespace;
 
-    public ResXmlStartNamespace() {
+    public ResXmlStartNamespace(ResXmlEndNamespace endNamespace) {
         super(ChunkType.XML_START_NAMESPACE);
+        this.mEndNamespace = endNamespace;
         this.mReferencedAttributes = new HashSet<>();
         this.mReferencedElements = new HashSet<>();
     }
+
+    public ResXmlElement element() {
+        return getParentInstance(ResXmlElement.class);
+    }
+
+    void ensureUniqueUri() {
+        ResXmlString xmlString = getResXmlString(getUriReference());
+        if (xmlString != null) {
+            ResXmlString prefixXmlString = xmlString.getNamespacePrefix();
+            if (prefixXmlString != null && prefixXmlString.getIndex() == getPrefixReference()) {
+                return;
+            }
+        }
+        setNamespace(getUri(), getPrefix());
+    }
+    void setNamespace(String uri, String prefix) {
+        ResXmlStringPool stringPool = getStringPool();
+        if (stringPool == null) {
+            return;
+        }
+        ResXmlString resXmlString = stringPool.getOrCreateNamespaceString(uri, prefix);
+        if (resXmlString == null) {
+            return;
+        }
+        setUriReference(resXmlString.getIndex());
+        setPrefixReference(resXmlString.getNamespacePrefix().getIndex());
+    }
+
     @Override
     void onUriReferenceChanged(int old, int uriReference){
         for(ResXmlAttribute attribute : mReferencedAttributes){
@@ -40,36 +76,73 @@ public class ResXmlStartNamespace extends ResXmlNamespaceChunk {
             element.setNamespaceReference(uriReference);
         }
     }
-    ResXmlEndNamespace getEnd(){
-        return (ResXmlEndNamespace) getPair();
+    @Override
+    public void onChunkLoaded() {
+        super.onChunkLoaded();
+        linkStringReferences();
     }
-    void setEnd(ResXmlEndNamespace namespace){
-        setPair(namespace);
+    ResXmlEndNamespace getEnd() {
+        return mEndNamespace;
+    }
+
+    @Override
+    void setStringReference(int value) {
+        super.setStringReference(value);
+        getEnd().setStringReference(value);
     }
     @Override
-    void linkStringReferences(){
-        super.linkStringReferences();
-        ResXmlEndNamespace end = getEnd();
-        if(end!=null){
-            end.linkStringReferences();
+    void setNamespaceReference(int value) {
+        super.setNamespaceReference(value);
+        getEnd().setNamespaceReference(value);
+    }
+
+    @Override
+    public void setLineNumber(int lineNumber) {
+        if (lineNumber != getLineNumber()) {
+            super.setLineNumber(lineNumber);
+            getEnd().setLineNumber(lineNumber);
         }
     }
+
     @Override
-    void onRemoved(){
-        ResXmlEndNamespace end = getEnd();
-        if(end!=null){
-            end.onRemoved();
-        }
+    void onPreRemove() {
         mReferencedAttributes.clear();
         mReferencedElements.clear();
+        super.onPreRemove();
     }
-    public boolean hasReferences(){
-        return mReferencedAttributes.size() > 0
-                || mReferencedElements.size() > 0;
+
+    @Override
+    protected void onPreRefresh() {
+        super.onPreRefresh();
+        ResXmlEndNamespace end = getEnd();
+        end.setNamespaceReference(getNamespaceReference());
+        end.setStringReference(getStringReference());
     }
-    public Iterator<ResXmlAttribute> getReferencedAttributes(){
-        return mReferencedAttributes.iterator();
+
+    @Override
+    public boolean isUnused() {
+        return getReferencedCount() == 0;
     }
+    public boolean isUndefined() {
+        if (isRemoved()) {
+            return true;
+        }
+        return getUriReference() == -1 &&
+                getPrefixReference() == -1;
+    }
+    public int getReferencedCount() {
+        if (isRemoved()) {
+            return 0;
+        }
+        return mReferencedAttributes.size() + mReferencedElements.size();
+    }
+    public boolean isBetterThan(ResXmlStartNamespace namespace) {
+        if (namespace == null) {
+            return true;
+        }
+        return getReferencedCount() > namespace.getReferencedCount();
+    }
+
     void addAttributeReference(ResXmlAttribute attribute){
         if(attribute != null){
             mReferencedAttributes.add(attribute);
@@ -90,30 +163,53 @@ public class ResXmlStartNamespace extends ResXmlNamespaceChunk {
             mReferencedElements.remove(element);
         }
     }
-    boolean removeIfNoReference(){
-        if(hasReferences()){
+    boolean fixEmpty() {
+        boolean changed = fixEmptyPrefix();
+        if(fixEmptyUri()){
+            changed = true;
+        }
+        return changed;
+    }
+    private boolean fixEmptyPrefix(){
+        if(!StringsUtil.isBlank(getPrefix())){
             return false;
         }
-        ResXmlElement parent = getParentResXmlElement();
-        if(parent != null){
-            parent.removeNamespace(this);
-            return true;
-        }
-        return false;
+        setPrefix("ns" + getIndex());
+        return true;
     }
-    public XMLNamespace decodeToXml(){
-        String uri=getUri();
-        String prefix=getPrefix();
-        if(isEmpty(uri) || isEmpty(prefix)){
-            return null;
+    private boolean fixEmptyUri(){
+        if(!StringsUtil.isBlank(getUri())){
+            return false;
         }
-        return new XMLNamespace(uri, prefix);
+        setUri(ResourceLibrary.URI_RES_AUTO);
+        return true;
     }
-    private boolean isEmpty(String txt){
-        if(txt==null){
-            return true;
+
+    @Override
+    public JSONObject toJson() {
+        JSONObject jsonObject = new JSONObject();
+        jsonObject.put(ResXmlNode.JSON_uri, getUri());
+        jsonObject.put(ResXmlNode.JSON_prefix, getPrefix());
+        jsonObject.put(ResXmlNode.JSON_line, getLineNumber());
+        return jsonObject;
+    }
+    @Override
+    public void fromJson(JSONObject json) {
+        setNamespace(json.getString(ResXmlElement.JSON_uri),
+                json.getString(ResXmlElement.JSON_prefix));
+        setLineNumber(json.optInt(ResXmlElement.JSON_line));
+    }
+
+    public void merge(ResXmlStartNamespace namespace) {
+        if (namespace == this) {
+            return;
         }
-        txt=txt.trim();
-        return txt.length()==0;
+        this.setNamespace(namespace.getUri(), namespace.getPrefix());
+        this.setLineNumber(namespace.getLineNumber());
+        this.setComment(namespace.getComment());
+        ResXmlEndNamespace end = this.getEnd();
+        ResXmlEndNamespace coming = namespace.getEnd();
+        end.setLineNumber(coming.getLineNumber());
+        end.setComment(coming.getComment());
     }
 }

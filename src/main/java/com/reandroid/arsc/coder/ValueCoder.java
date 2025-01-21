@@ -46,6 +46,10 @@ public class ValueCoder {
             if(attributeBag != null){
                 encodeResult = attributeBag.encode(value);
                 if(encodeResult != null){
+                    if(encodeResult.valueType == ValueType.STRING){
+                        output.setValueAsString(XmlSanitizer.unEscapeSpecialCharacter(value));
+                        return new EncodeResult(ValueType.STRING, output.getData());
+                    }
                     if(encodeResult.isError()){
                         if(validate){
                             return encodeResult;
@@ -77,8 +81,7 @@ public class ValueCoder {
         if(resourceEntry != null){
             return resourceEntry.buildReference(packageBlock, referenceType);
         }
-        decodeUnknownResourceId(referenceType == ValueType.REFERENCE, resourceId);
-        return null;
+        return decodeUnknownResourceId(referenceType == ValueType.REFERENCE, resourceId);
     }
     public static EncodeResult encodeReference(PackageBlock packageBlock, String value){
         if(value == null || value.length() < 3){

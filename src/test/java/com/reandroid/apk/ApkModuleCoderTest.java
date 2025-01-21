@@ -1,6 +1,7 @@
 package com.reandroid.apk;
 
-import com.reandroid.arsc.base.Block;
+import com.reandroid.TestUtils;
+import com.reandroid.arsc.base.BlockDiff;
 import com.reandroid.arsc.chunk.TableBlock;
 import com.reandroid.arsc.chunk.xml.AndroidManifestBlock;
 import com.reandroid.arsc.value.ResConfig;
@@ -22,7 +23,7 @@ public class ApkModuleCoderTest {
     public void a_testDecodeToXml() throws IOException {
         ApkModule apkModule = getApkModule();
         Assert.assertNotNull(apkModule);
-        File dir = FileUtil.getTempDir();
+        File dir = TestUtils.getTempDir();
         dir = new File(dir, "decode_xml");
         ApkModuleXmlDecoder decoder = new ApkModuleXmlDecoder(apkModule);
         decoder.decode(dir);
@@ -35,24 +36,30 @@ public class ApkModuleCoderTest {
         ApkModuleXmlEncoder encoder = new ApkModuleXmlEncoder();
         encoder.scanDirectory(mDir_xml);
         ApkModule apkModule_encoded = encoder.getApkModule();
-        Assert.assertNotNull(apkModule_encoded.getAndroidManifestBlock());
-        apkModule_encoded.getAndroidManifestBlock().refreshFull();
-        apkModule.getAndroidManifestBlock().removeUnusedNamespaces();
-        apkModule.getAndroidManifestBlock().getStringPool().removeUnusedStrings();
-        apkModule.getAndroidManifestBlock().refreshFull();
-        File apk = new File(mDir_xml.getParentFile(), "encoded_xml.apk");
+        apkModule_encoded.getTableBlock().getStringPool().sort();
+        Assert.assertNotNull(apkModule_encoded.getAndroidManifest());
+        apkModule_encoded.getAndroidManifest().refreshFull();
+        apkModule.getAndroidManifest().removeUnusedNamespaces();
+        apkModule.getAndroidManifest().getStringPool().removeUnusedStrings();
+        apkModule.getAndroidManifest().refreshFull();
+
+        apkModule_encoded.getTableBlock().refreshFull();
+        // Preserve generated apk for signing and install on device
+        File apk = new File(TestUtils.getTesApkDirectory(), "encoded_xml.apk");
+
         apkModule_encoded.writeApk(apk);
         apkModule_encoded = ApkModule.loadApkFile(apk);
+        TestUtils.log("Generated apk: " + apk.getAbsolutePath());
+
         FileUtil.deleteDirectory(mDir_xml);
         Assert.assertFalse("Failed to delete: " + mDir_xml, mDir_xml.exists());
         compare(apkModule, apkModule_encoded);
-        apk.delete();
     }
     @Test
     public void c_testDecodeToJson() throws IOException {
         ApkModule apkModule = getApkModule();
         Assert.assertNotNull(apkModule);
-        File dir = FileUtil.getTempDir();
+        File dir = TestUtils.getTempDir();
         dir = new File(dir, "decode_json");
         ApkModuleJsonDecoder decoder = new ApkModuleJsonDecoder(apkModule);
         decoder.decode(dir);
@@ -65,25 +72,29 @@ public class ApkModuleCoderTest {
         ApkModuleJsonEncoder encoder = new ApkModuleJsonEncoder();
         encoder.scanDirectory(mDir_json);
         ApkModule apkModule_encoded = encoder.getApkModule();
-        Assert.assertNotNull(apkModule_encoded.getAndroidManifestBlock());
-        apkModule_encoded.getAndroidManifestBlock().refreshFull();
-        apkModule.getAndroidManifestBlock().removeUnusedNamespaces();
-        apkModule.getAndroidManifestBlock().getStringPool().removeUnusedStrings();
-        apkModule.getAndroidManifestBlock().refreshFull();
-        File apk = new File(mDir_json.getParentFile(), "encoded_json.apk");
+        Assert.assertNotNull(apkModule_encoded.getAndroidManifest());
+        apkModule_encoded.getAndroidManifest().refreshFull();
+        apkModule.getAndroidManifest().removeUnusedNamespaces();
+        apkModule.getAndroidManifest().getStringPool().removeUnusedStrings();
+        apkModule.getAndroidManifest().refreshFull();
+
+        // Preserve generated apk for signing and install on device
+        File apk = new File(TestUtils.getTesApkDirectory(), "encoded_json.apk");
+
         apkModule_encoded.writeApk(apk);
+        TestUtils.log("Generated apk: " + apk.getAbsolutePath());
+
         apkModule_encoded = ApkModule.loadApkFile(apk);
         FileUtil.deleteDirectory(mDir_json);
         Assert.assertFalse("Failed to delete: " + mDir_json, mDir_json.exists());
         compare(apkModule, apkModule_encoded);
-        apk.delete();
     }
     private void compare(ApkModule module1, ApkModule module2) throws IOException {
         Assert.assertEquals(module1.getZipEntryMap().size(), module2.getZipEntryMap().size());
 
         compareTableBlock(module1.getTableBlock(), module2.getTableBlock());
 
-        compareManifest(module1.getAndroidManifestBlock(), module2.getAndroidManifestBlock());
+        compareManifest(module1.getAndroidManifest(), module2.getAndroidManifest());
     }
     private void compareTableBlock(TableBlock tableBlock1, TableBlock tableBlock2) {
 
@@ -96,22 +107,10 @@ public class ApkModuleCoderTest {
         tableBlock1.refreshFull();
         tableBlock2.refreshFull();
 
-        int position = findByteDifferencePosition(tableBlock1.getBytes(), tableBlock2.getBytes());
-        if(position >= 0){
-            position++;
-            Block block1 = tableBlock1.locateBlock(position);
-            Block block2 = tableBlock2.locateBlock(position);
-            Assert.assertEquals("Difference at " + position, block1, block2);
-        }
-    }
-    private int findByteDifferencePosition(byte[] bytes1, byte[] bytes2){
-        Assert.assertEquals("TableBlock bytes", bytes1.length, bytes2.length);
-        for(int i = 0; i < bytes1.length; i++){
-            if(bytes1[i] != bytes2[i]){
-                return i;
-            }
-        }
-        return -1;
+        BlockDiff.DiffResult[] diffResults = new BlockDiff(tableBlock1, tableBlock2).find();
+        String message = BlockDiff.toString(diffResults);
+
+        Assert.assertNull(message);
     }
     private void compareManifest(AndroidManifestBlock manifest1, AndroidManifestBlock manifest2) throws IOException {
         String xml1 = manifest1.serializeToXml();

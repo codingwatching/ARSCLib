@@ -45,7 +45,7 @@ public class LibraryInfoArray extends BlockArray<LibraryInfo> implements JSONCon
         if(info!=null){
             return info;
         }
-        int index=childesCount();
+        int index= size();
         ensureSize(index+1);
         info=get(index);
         info.setId(pkgId);
@@ -64,17 +64,17 @@ public class LibraryInfoArray extends BlockArray<LibraryInfo> implements JSONCon
         return new LibraryInfo();
     }
     @Override
-    public LibraryInfo[] newInstance(int len) {
+    public LibraryInfo[] newArrayInstance(int len) {
         return new LibraryInfo[len];
     }
     @Override
     protected void onRefreshed() {
-        mInfoCount.set(childesCount());
+        mInfoCount.set(size());
     }
 
     @Override
     public void onReadBytes(BlockReader reader) throws IOException {
-        setChildesCount(mInfoCount.get());
+        setSize(mInfoCount.get());
         super.onReadBytes(reader);
     }
     @Override
@@ -93,7 +93,7 @@ public class LibraryInfoArray extends BlockArray<LibraryInfo> implements JSONCon
     }
     @Override
     public void fromJson(JSONArray json) {
-        clearChildes();
+        clear();
         if(json==null){
             return;
         }
@@ -106,7 +106,7 @@ public class LibraryInfoArray extends BlockArray<LibraryInfo> implements JSONCon
         }
     }
     public void merge(LibraryInfoArray infoArray){
-        if(infoArray==null||infoArray==this||infoArray.childesCount()==0){
+        if(infoArray==null||infoArray==this||infoArray.size()==0){
             return;
         }
         for(LibraryInfo info:infoArray.listItems()){

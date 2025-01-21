@@ -24,12 +24,20 @@ import com.reandroid.arsc.chunk.SpecBlock;
 import com.reandroid.arsc.chunk.TypeBlock;
 import com.reandroid.arsc.container.SpecTypePair;
 import com.reandroid.arsc.io.BlockReader;
-import com.reandroid.arsc.item.*;
+import com.reandroid.arsc.item.IntegerItem;
+import com.reandroid.arsc.item.SpecFlag;
+import com.reandroid.arsc.item.SpecString;
+import com.reandroid.arsc.item.TypeString;
+import com.reandroid.arsc.model.ResourceEntry;
+import com.reandroid.arsc.model.ResourceName;
 import com.reandroid.arsc.pool.SpecStringPool;
 import com.reandroid.arsc.pool.TableStringPool;
-import com.reandroid.utils.HexUtil;
+import com.reandroid.arsc.refactor.ResourceMergeOption;
+import com.reandroid.graphics.AndroidColor;
 import com.reandroid.json.JSONConvert;
 import com.reandroid.json.JSONObject;
+import com.reandroid.utils.HexUtil;
+import com.reandroid.utils.collection.EmptyIterator;
 import com.reandroid.xml.StyleDocument;
 
 import java.io.IOException;
@@ -44,6 +52,13 @@ public class Entry extends Block implements JSONConvert<JSONObject> {
         super();
     }
 
+    public Iterator<ValueItem> allValues(){
+        TableEntry<?, ?> tableEntry = getTableEntry();
+        if(tableEntry != null){
+            return tableEntry.allValues();
+        }
+        return EmptyIterator.of();
+    }
     public void linkTableStringsInternal(TableStringPool tableStringPool){
         TableEntry<?, ?> tableEntry = getTableEntry();
         tableEntry.linkTableStringsInternal(tableStringPool);
@@ -325,15 +340,71 @@ public class Entry extends Block implements JSONConvert<JSONObject> {
         }
         return null;
     }
+    public ValueType getValueType() {
+        ResValue resValue = getResValue();
+        if(resValue != null) {
+            return resValue.getValueType();
+        }
+        return null;
+    }
+    public String getValueAsString() {
+        ResValue resValue = getResValue();
+        if(resValue != null) {
+            return resValue.getValueAsString();
+        }
+        return null;
+    }
+    public StyleDocument getValueAsStyleDocument() {
+        ResValue resValue = getResValue();
+        if(resValue != null) {
+            return resValue.getValueAsStyleDocument();
+        }
+        return null;
+    }
+    public Boolean getValueAsBoolean() {
+        ResValue resValue = getResValue();
+        if(resValue != null) {
+            return resValue.getValueAsBoolean();
+        }
+        return null;
+    }
+    public AndroidColor getValueAsColor() {
+        ResValue resValue = getResValue();
+        if(resValue != null) {
+            return resValue.getValueAsColor();
+        }
+        return null;
+    }
+    public Float getValueAsFloat() {
+        ResValue resValue = getResValue();
+        if(resValue != null) {
+            return resValue.getValueAsFloat();
+        }
+        return null;
+    }
+    public Integer getValueAsInteger() {
+        ResValue resValue = getResValue();
+        if(resValue != null) {
+            return resValue.getValueAsInteger();
+        }
+        return null;
+    }
+    public ResourceEntry getValueAsReference() {
+        ResValue resValue = getResValue();
+        if(resValue != null) {
+            return resValue.getValueAsReference();
+        }
+        return null;
+    }
     public ResValue setValueAsRaw(ValueType valueType, int data){
-        TableEntry<?, ?> tableEntry = ensureTableEntry(false);
-        ResValue resValue = (ResValue) tableEntry.getValue();
+        ResValue resValue = ensureScalar();
         resValue.setTypeAndData(valueType, data);
         return resValue;
     }
-    public ResValue setValueAsBoolean(boolean val){
-        int data = val?0xffffffff:0;
-        return setValueAsRaw(ValueType.BOOLEAN, data);
+    public ResValue setValueAsBoolean(boolean value){
+        ResValue resValue = ensureScalar();
+        resValue.setValueAsBoolean(value);
+        return resValue;
     }
     public ResValue setValueAsReference(int resourceId){
         return setValueAsRaw(ValueType.REFERENCE, resourceId);
@@ -345,11 +416,16 @@ public class Entry extends Block implements JSONConvert<JSONObject> {
         return resValue;
     }
     public ResValue setValueAsString(String str){
-        TableEntry<?, ?> tableEntry = ensureTableEntry(false);
-        ResValue resValue = (ResValue) tableEntry.getValue();
+        ResValue resValue = ensureScalar();
         resValue.setValueAsString(str);
         return resValue;
     }
+    public ResValue setValueAsColor(AndroidColor color){
+        ResValue resValue = ensureScalar();
+        resValue.setValue(color);
+        return resValue;
+    }
+
     public SpecString getSpecString(){
         int ref = getSpecReference();
         if(ref < 0){
@@ -395,6 +471,23 @@ public class Entry extends Block implements JSONConvert<JSONObject> {
     }
     public PackageBlock getPackageBlock(){
         return getParent(PackageBlock.class);
+    }
+    public ResourceEntry getResourceEntry() {
+        return new ResourceEntry(getPackageBlock(), getResourceId());
+    }
+    public ResourceName getResourceName() {
+        PackageBlock packageBlock = getPackageBlock();
+        if(packageBlock == null) {
+            return null;
+        }
+        String name = getName();
+        if(name == null) {
+            return null;
+        }
+        return new ResourceName(packageBlock.getName(), getTypeName(), name);
+    }
+    private ResValue ensureScalar() {
+        return (ResValue) ensureTableEntry(false).getValue();
     }
     private TableEntry<?, ?> ensureTableEntry(boolean is_complex){
         TableEntry<?, ?> tableEntry = getTableEntry();
@@ -455,7 +548,7 @@ public class Entry extends Block implements JSONConvert<JSONObject> {
         if(isNull()){
             return;
         }
-        counter.addCount(getTableEntry().countBytes());
+        getTableEntry().onCountUpTo(counter);
     }
     @Override
     protected int onWriteBytes(OutputStream stream) throws IOException {
@@ -546,22 +639,34 @@ public class Entry extends Block implements JSONConvert<JSONObject> {
         entry.fromJson(json);
     }
 
-    public void merge(Entry entry){
-        if(!shouldMerge(entry)){
-            return;
-        }
-        TableEntry<?, ?> tableEntry = entry.getTableEntry();
-        TableEntry<?, ?> existEntry = ensureTableEntry(tableEntry instanceof ResTableMapEntry);
-        existEntry.merge(tableEntry);
+    public ResourceEntry resolve(int resourceId) {
+        PackageBlock packageBlock = getPackageBlock();
+        return packageBlock.getTableBlock()
+                .getResource(packageBlock, resourceId);
     }
-    private boolean shouldMerge(Entry coming){
+    public void merge(Entry entry){
+        if(canMerge(entry)){
+            TableEntry<?, ?> tableEntry = entry.getTableEntry();
+            TableEntry<?, ?> existEntry = ensureTableEntry(tableEntry instanceof ResTableMapEntry);
+            existEntry.merge(tableEntry);
+        }
+    }
+    public void mergeWithName(ResourceMergeOption mergeOption, Entry entry) {
+        if(canMerge(entry)) {
+            unlinkNullSpecString();
+            TableEntry<?, ?> tableEntry = entry.getTableEntry();
+            TableEntry<?, ?> existEntry = ensureTableEntry(tableEntry instanceof ResTableMapEntry);
+            existEntry.mergeWithName(mergeOption, tableEntry);
+        }
+    }
+    private boolean canMerge(Entry coming){
         if(coming == null || coming == this || coming.isNull()){
             return false;
         }
         if(this.isNull()){
             return true;
         }
-        return getTableEntry().shouldMerge(coming.getTableEntry());
+        return getTableEntry().canMerge(coming.getTableEntry());
     }
     @Override
     public String toString(){

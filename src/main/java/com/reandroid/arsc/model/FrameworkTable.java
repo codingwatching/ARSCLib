@@ -15,7 +15,7 @@
   */
 package com.reandroid.arsc.model;
 
-import com.reandroid.arsc.BuildInfo;
+import com.reandroid.arsc.ARSCLib;
 import com.reandroid.arsc.array.SpecTypePairArray;
 import com.reandroid.arsc.array.TypeBlockArray;
 import com.reandroid.arsc.chunk.ChunkType;
@@ -29,9 +29,13 @@ import com.reandroid.arsc.pool.TableStringPool;
 import com.reandroid.arsc.value.Entry;
 import com.reandroid.arsc.value.ResConfig;
 import com.reandroid.common.FileChannelInputStream;
+import com.reandroid.utils.collection.ArrayCollection;
 
-import java.io.*;
-import java.util.*;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Iterator;
+import java.util.List;
 
 public class FrameworkTable extends TableBlock {
 
@@ -61,11 +65,11 @@ public class FrameworkTable extends TableBlock {
     }
 
     @Override
-    public void destroy(){
+    public void clear(){
         this.frameworkName = null;
         this.versionCode = 0;
         this.mainPackageId = 0;
-        super.destroy();
+        super.clear();
     }
     public int getVersionCode(){
         if(versionCode == 0 && isOptimized()){
@@ -151,22 +155,22 @@ public class FrameworkTable extends TableBlock {
         SpecTypePairArray specTypePairArray = pkg.getSpecTypePairArray();
         specTypePairArray.sort();
 
-        SpecTypePair[] specTypePairs = specTypePairArray.getChildes().clone();
-        for(SpecTypePair specTypePair : specTypePairs){
-            removeEmptyBlocks(specTypePair);
+        Iterator<SpecTypePair> iterator = specTypePairArray.clonedIterator();
+        while (iterator.hasNext()){
+            removeEmptyBlocks(iterator.next());
         }
     }
     private void removeEmptyBlocks(SpecTypePair specTypePair){
         TypeBlockArray typeBlockArray = specTypePair.getTypeBlockArray();
-        if(typeBlockArray.childesCount()<2){
+        if(typeBlockArray.size()<2){
             return;
         }
         typeBlockArray.removeEmptyBlocks();
     }
     private void optimizeTableString(){
         removeUnusedTableString();
+        getStringPool().getStyleArray().clear();
         shrinkTableString();
-        getStringPool().getStyleArray().clearChildes();
         removeUnusedTableString();
     }
     private void removeUnusedTableString(){
@@ -178,7 +182,7 @@ public class FrameworkTable extends TableBlock {
         TableStringPool tableStringPool=getStringPool();
         tableStringPool.getStringsArray().ensureSize(1);
         TableString title=tableStringPool.get(0);
-        title.set(BuildInfo.getRepo());
+        title.set(ARSCLib.getRepo());
         for(TableString tableString:tableStringPool.getStringsArray().listItems()){
             if(tableString==title){
                 continue;
@@ -188,7 +192,7 @@ public class FrameworkTable extends TableBlock {
         tableStringPool.refresh();
     }
     private void shrinkTableString(TableString zero, TableString tableString){
-        List<ReferenceItem> allRef = new ArrayList<>(tableString.getReferencedList());
+        List<ReferenceItem> allRef = new ArrayCollection<>(tableString.getReferencedList());
         tableString.removeAllReference();
         for(ReferenceItem item:allRef){
             item.set(zero.getIndex());

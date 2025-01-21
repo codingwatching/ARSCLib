@@ -19,14 +19,15 @@ import com.reandroid.arsc.chunk.PackageBlock;
 import com.reandroid.arsc.coder.EncodeResult;
 import com.reandroid.arsc.coder.ValueCoder;
 import com.reandroid.arsc.model.ResourceEntry;
+import com.reandroid.arsc.refactor.ResourceMergeOption;
 import com.reandroid.xml.XMLUtil;
 
 public abstract class AttributeValue extends ValueItem{
     public AttributeValue(int bytesLength, int sizeOffset) {
         super(bytesLength, sizeOffset);
     }
-    public abstract int getNameResourceID();
-    public abstract void setNameResourceID(int resourceId);
+    public abstract int getNameId();
+    public abstract void setNameId(int resourceId);
     public abstract String decodePrefix();
     public abstract String decodeName(boolean includePrefix);
 
@@ -34,7 +35,7 @@ public abstract class AttributeValue extends ValueItem{
         return decodeName(true);
     }
     public ResourceEntry resolveName(){
-        return resolve(getNameResourceID());
+        return resolve(getNameId());
     }
     public EncodeResult encodeStyleValue(ResourceEntry nameEntry, String value){
         return encodeStyleValue(false, nameEntry, value);
@@ -104,10 +105,10 @@ public abstract class AttributeValue extends ValueItem{
         return false;
     }
     public void setName(String name, int nameId){
-        setNameResourceID(nameId);
+        setNameId(nameId);
     }
     @Override
-    public String decodeValue(){
+    public String decodeValue(boolean validatePackage){
         if(AttributeDataFormat.INTEGER.contains(getValueType())){
             String value = decodeDataAsAttrFormats();
             if(value == null){
@@ -117,7 +118,7 @@ public abstract class AttributeValue extends ValueItem{
                 return value;
             }
         }
-        return super.decodeValue();
+        return super.decodeValue(validatePackage);
     }
     private String decodeDataAsAttr(){
         ResourceEntry attr = resolveName();
@@ -129,5 +130,36 @@ public abstract class AttributeValue extends ValueItem{
     String decodeDataAsAttrFormats(){
         return null;
     }
+    @Override
+    public void mergeWithName(ResourceMergeOption mergeOption, ValueItem valueItem){
+        if(valueItem == null || valueItem == this || getClass() != valueItem.getClass()){
+            return;
+        }
+        AttributeValue attributeValue = (AttributeValue) valueItem;
+        super.mergeWithName(mergeOption, attributeValue);
 
+        String name = attributeValue.decodeName(false);
+        ResourceEntry nameId = attributeValue.resolveName();
+        if(nameId == null){
+            setName(name, attributeValue.getNameId());
+        }else {
+            int id = attributeValue.getNameId();
+            if(nameId.isContext(attributeValue.getPackageBlock())){
+                ResourceEntry mergedName;
+                PackageBlock packageBlock = getPackageBlock();
+                if(nameId.isDeclared()){
+                    mergedName = packageBlock.mergeWithName(mergeOption, nameId);
+                }else {
+                    mergedName = mergeOption.resolveUndeclared(packageBlock, nameId);
+                }
+                if(mergedName != null){
+                    id = mergedName.getResourceId();
+                    name = mergedName.getName();
+                }
+            }else {
+                id = nameId.getResourceId();
+            }
+            setName(name, id);
+        }
+    }
 }

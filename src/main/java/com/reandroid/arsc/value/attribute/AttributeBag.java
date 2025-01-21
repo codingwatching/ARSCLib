@@ -48,7 +48,7 @@ public class AttributeBag {
             }
         }
         if(isCompatible(ValueType.STRING)){
-            return null;
+            return new EncodeResult(ValueType.STRING, -1);
         }
         if(isEnumOrFlag()){
             return new EncodeResult("Invalid attribute enum/flag/value");
@@ -259,11 +259,11 @@ public class AttributeBag {
         return null;
     }
     public static AttributeBag create(ResValueMapArray resValueMapArray){
-        if(resValueMapArray==null){
+        if(resValueMapArray==null || resValueMapArray.size() == 0){
             return null;
         }
-        AttributeBagItem[] bagItems=AttributeBagItem.create(resValueMapArray.getChildes());
-        if(bagItems==null){
+        AttributeBagItem[] bagItems = AttributeBagItem.create(resValueMapArray.getChildes());
+        if(bagItems == null){
             return null;
         }
         return new AttributeBag(bagItems);

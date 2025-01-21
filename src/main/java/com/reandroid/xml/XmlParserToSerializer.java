@@ -24,37 +24,48 @@ import java.io.Closeable;
 import java.io.IOException;
 
 public class XmlParserToSerializer {
-    private final XmlSerializer serializer;
+
     private final XmlPullParser parser;
+    private XmlSerializer serializer;
+    private int depth = 0;
     private boolean enableIndent;
     boolean processNamespace;
     boolean reportNamespaceAttrs;
 
     public XmlParserToSerializer(XmlPullParser parser, XmlSerializer serializer){
         this.parser = parser;
-        this.serializer = serializer;
+        this.serializer = XmlIndentingSerializer.create(serializer);
         this.enableIndent = true;
-        setFeatureSafe(parser, XmlPullParser.FEATURE_PROCESS_NAMESPACES, true);
-        setFeatureSafe(parser, XmlPullParser.FEATURE_REPORT_NAMESPACE_ATTRIBUTES, true);
+        XMLUtil.setFeatureSafe(parser, XmlPullParser.FEATURE_PROCESS_NAMESPACES, true);
+        XMLUtil.setFeatureSafe(parser, XmlPullParser.FEATURE_REPORT_NAMESPACE_ATTRIBUTES, true);
     }
 
     public void setEnableIndent(boolean enableIndent) {
+        if(enableIndent == this.enableIndent) {
+            return;
+        }
         this.enableIndent = enableIndent;
+        if (enableIndent) {
+            this.serializer = XmlIndentingSerializer.create(this.serializer);
+        } else if(this.serializer instanceof XmlIndentingSerializer) {
+            this.serializer = ((XmlIndentingSerializer) this.serializer).getBaseSerializer();
+        }
     }
 
     public void write() throws IOException, XmlPullParserException {
         XmlPullParser parser = this.parser;
 
-        this.processNamespace = getFeatureSafe(parser,
+        this.processNamespace = XMLUtil.getFeatureSafe(parser,
                 XmlPullParser.FEATURE_PROCESS_NAMESPACES, false);
 
-        this.reportNamespaceAttrs = getFeatureSafe(parser,
+        this.reportNamespaceAttrs = XMLUtil.getFeatureSafe(parser,
                 XmlPullParser.FEATURE_REPORT_NAMESPACE_ATTRIBUTES, false);
 
         int event = parser.next();
         while (nextEvent(event)){
             event = parser.next();
         }
+        this.serializer.flush();
         close();
     }
     private void close() throws IOException {
@@ -68,33 +79,44 @@ public class XmlParserToSerializer {
         }
     }
     private boolean nextEvent(int event) throws IOException, XmlPullParserException {
-        boolean hasNext = true;
-        switch (event){
+        boolean hasNext = event >= 0;
+        switch (event) {
             case XmlResourceParser.START_DOCUMENT:
                 onStartDocument();
+                depth ++;
                 break;
             case XmlResourceParser.START_TAG:
                 onStartTag();
+                depth ++;
                 break;
             case XmlResourceParser.TEXT:
                 onText();
+                break;
+            case XmlResourceParser.ENTITY_REF:
+                onEntityRef();
+                break;
+            case XmlResourceParser.CDSECT:
+                onCdsect();
                 break;
             case XmlResourceParser.COMMENT:
                 onComment();
                 break;
             case XmlResourceParser.END_TAG:
                 onEndTag();
+                depth --;
+                hasNext = depth != 0;
                 break;
             case XmlResourceParser.END_DOCUMENT:
                 onEndDocument();
-                hasNext = false;
+                depth --;
+                hasNext = depth != 0;
                 break;
         }
         return hasNext;
     }
 
     private void onStartDocument() throws IOException{
-        serializer.startDocument("utf-8", null);
+        serializer.startDocument(parser.getInputEncoding(), null);
     }
     private void onStartTag() throws IOException, XmlPullParserException {
         XmlPullParser parser = this.parser;
@@ -102,10 +124,6 @@ public class XmlParserToSerializer {
 
         boolean processNamespace = this.processNamespace;
         boolean countNamespaceAsAttribute = processNamespace && reportNamespaceAttrs;
-
-        if(enableIndent){
-            setFeatureSafe(serializer, FEATURE_INDENT_OUTPUT, true);
-        }
 
         if(!countNamespaceAsAttribute){
             int nsCount = parser.getNamespaceCount(parser.getDepth());
@@ -129,6 +147,12 @@ public class XmlParserToSerializer {
     private void onText() throws IOException{
         serializer.text(parser.getText());
     }
+    private void onEntityRef() throws IOException{
+        serializer.entityRef(parser.getText());
+    }
+    private void onCdsect() throws IOException{
+        serializer.cdsect(parser.getText());
+    }
     private void onComment() throws IOException{
         serializer.comment(parser.getText());
     }
@@ -138,26 +162,4 @@ public class XmlParserToSerializer {
     private void onEndDocument() throws IOException{
         serializer.endDocument();
     }
-
-    private static boolean getFeatureSafe(XmlPullParser parser, String name, boolean def){
-        try{
-            return parser.getFeature(name);
-        }catch (Throwable ignored){
-            return def;
-        }
-    }
-    private static void setFeatureSafe(XmlPullParser parser, String name, boolean state){
-        try{
-            parser.setFeature(name, state);
-        }catch (Throwable ignored){
-        }
-    }
-    private static void setFeatureSafe(XmlSerializer serializer, String name, boolean state){
-        try{
-            serializer.setFeature(name, state);
-        }catch (Throwable ignored){
-        }
-    }
-
-    private static final String FEATURE_INDENT_OUTPUT = "http://xmlpull.org/v1/doc/features.html#indent-output";
 }

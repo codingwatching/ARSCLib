@@ -15,18 +15,84 @@
  */
 package com.reandroid.utils.collection;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.List;
+import com.reandroid.utils.ObjectsUtil;
+
+import java.util.*;
+import java.util.function.Predicate;
 
 public class CollectionUtil {
 
+    public static void walk(Iterator<?> iterator){
+        if(iterator == null){
+            return;
+        }
+        while (iterator.hasNext()){
+            iterator.next();
+        }
+    }
+    public static<T> List<T> toUniqueList(Iterator<? extends T> iterator) {
+        return new ArrayCollection<>(toHashSet(iterator));
+    }
+    @SafeVarargs
+    public static<T> HashSet<T> newHashSet(T ... elements) {
+        if(elements == null || elements.length == 0) {
+            return new HashSet<>();
+        }
+        int length = elements.length;
+        HashSet<T> results = new HashSet<>(length);
+        for (int i = 0; i < length; i ++){
+            results.add(elements[i]);
+        }
+        return results;
+    }
+    public static<T> HashSet<T> toHashSet(Iterator<? extends T> iterator) {
+        HashSet<T> results = new HashSet<>();
+        while (iterator.hasNext()){
+            T item = iterator.next();
+            results.add(item);
+        }
+        return results;
+    }
+
+    public static<T extends Comparable<T>> void sort(List<T> list){
+        list.sort(getComparator());
+    }
+    public static<T> T getLast(Iterator<T> iterator){
+        if(iterator == null){
+            return null;
+        }
+        T result = null;
+        while (iterator.hasNext()){
+            result = iterator.next();
+        }
+        return result;
+    }
+    public static boolean contains(Iterator<?> iterator, Object obj){
+        if(iterator == null){
+            return false;
+        }
+        while (iterator.hasNext()){
+            if(obj.equals(iterator.next())){
+                return true;
+            }
+        }
+        return false;
+    }
     public static<T> T getFirst(Iterator<T> iterator){
         if(iterator == null || !iterator.hasNext()){
             return null;
         }
         return iterator.next();
+    }
+    public static<T> T getSingle(Iterator<T> iterator){
+        T result = null;
+        if(iterator != null && iterator.hasNext()){
+            result = iterator.next();
+            if(iterator.hasNext()){
+                result = null;
+            }
+        }
+        return result;
     }
     public static int count(Iterable<?> iterable){
         if(iterable == null || iterable instanceof EmptyItem){
@@ -89,14 +155,161 @@ public class CollectionUtil {
         }
         return !iterator.hasNext();
     }
-    public static<T> List<T> toList(Iterator<? extends T> iterator){
-        if(!iterator.hasNext()){
-            return EmptyList.of();
+    public static<T> Collection<T> collect(Iterator<? extends T> iterator){
+        boolean hasNext = iterator.hasNext();
+        if(!hasNext){
+            return ArrayCollection.empty();
         }
-        List<T> results = new ArrayList<>(2);
-        while (iterator.hasNext()){
-            results.add(iterator.next());
+        ArrayCollection<T> results = new ArrayCollection<>();
+        results.addAll(iterator);
+        if(results.size() > 1000){
+            results.trimToSize();
         }
         return results;
     }
+    @SafeVarargs
+    public static<T> List<T> asList(T ... elements) {
+        return new ArrayCollection<>(elements);
+    }
+    public static<T> List<T> toList(Iterator<? extends T> iterator){
+        boolean hasNext = iterator.hasNext();
+        if(!hasNext){
+            return EmptyList.of();
+        }
+        ArrayCollection<T> results = new ArrayCollection<>(2);
+        while (hasNext){
+            results.add(iterator.next());
+            hasNext = iterator.hasNext();
+        }
+        if(results.size() > 1000){
+            results.trimToSize();
+        }
+        return results;
+    }
+    public static<T> Iterator<T> newIterator(Collection<? extends T> collection) {
+        int size = collection.size();
+        if(size == 0) {
+            return EmptyIterator.of();
+        }
+        return ArrayIterator.of(collection.toArray());
+    }
+    public static<T> Iterator<T> copyOf(Iterator<? extends T> iterator){
+        boolean hasNext = iterator.hasNext();
+        if(!hasNext){
+            return EmptyIterator.of();
+        }
+        List<T> results = toList(iterator);
+        return results.iterator();
+    }
+    public static<T> Iterator<T> uniqueOf(Iterator<? extends T> iterator){
+        boolean hasNext = iterator.hasNext();
+        if(!hasNext){
+            return EmptyIterator.of();
+        }
+        return new UniqueIterator<T>(ObjectsUtil.cast(iterator));
+    }
+    public static<T> Iterator<T> copyOfUniqueOf(Iterator<? extends T> iterator){
+        return copyOf(uniqueOf(iterator));
+    }
+    public static<T> Iterator<T> reversedOf(Iterator<? extends T> iterator){
+        boolean hasNext = iterator.hasNext();
+        if (!hasNext) {
+            return EmptyIterator.of();
+        }
+        T first = iterator.next();
+        hasNext = iterator.hasNext();
+        if (!hasNext) {
+            return SingleIterator.of(first);
+        }
+        ArrayCollection<T> results = new ArrayCollection<>(8);
+        results.add(first);
+        while (hasNext) {
+            results.add(iterator.next());
+            hasNext = iterator.hasNext();
+        }
+        return results.reversedIterator();
+    }
+
+    public static void shuffle(List<?> list) {
+        if(list.isEmpty()){
+            return;
+        }
+        int random = Long.toString(System.currentTimeMillis()).hashCode();
+        shuffle(random, list);
+    }
+    @SuppressWarnings("all")
+    public static void shuffle(int random, List<?> list) {
+        if(list.isEmpty()){
+            return;
+        }
+        if(list instanceof ArrayCollection) {
+            shuffle(random, (ArrayCollection<?>) list);
+        }else {
+            ArrayCollection collection = new ArrayCollection<>(list);
+            list.clear();
+            shuffle(random, collection);
+            list.addAll(collection);
+        }
+    }
+    private static void shuffle(int random, ArrayCollection<?> list) {
+        int size = list.size();
+        for(int i = 0; i < size; i++) {
+            int i2 = random % size;
+            if(i2 < 0) {
+                i2 = -i2;
+            }
+            list.swap(i, i2);
+            random = random * 31 + size + 1;
+        }
+    }
+    @SuppressWarnings("unchecked")
+    public static<T> Predicate<T> getAcceptAll(){
+        return (Predicate<T>) ACCEPT_ALL;
+    }
+    @SuppressWarnings("unchecked")
+    public static<T> Predicate<T> getRejectAll(){
+        return (Predicate<T>) REJECT_ALL;
+    }
+
+    public static<T> Predicate<? super T> orFilter(Predicate<? super T> filter1, Predicate<? super T> filter2){
+        if(filter1 == null || filter1 == getRejectAll()){
+            return filter2;
+        }
+        if(filter2 == null || filter2 == getRejectAll()){
+            return filter1;
+        }
+        return t -> (filter1.test(t) || filter2.test(t));
+    }
+    public static<T> Predicate<T> andFilter(Predicate<T> filter1, Predicate<T> filter2){
+        if(filter1 == null || filter1 == getAcceptAll()){
+            return filter2;
+        }
+        if(filter2 == null || filter2 == getAcceptAll()){
+            return filter1;
+        }
+        return t -> (filter1.test(t) && filter2.test(t));
+    }
+    public static<T> Predicate<T> negateFilter(Predicate<T> filter){
+        return t -> !filter.test(t);
+    }
+    public static<T> Predicate<T> diffFilter(Predicate<T> filter1, Predicate<T> filter2){
+        return t -> (filter1.test(t) != filter2.test(t));
+    }
+    public static<T> Predicate<T> equalFilter(Predicate<T> filter1, Predicate<T> filter2){
+        return t -> (filter1.test(t) == filter2.test(t));
+    }
+    @SuppressWarnings("unchecked")
+    public static<T extends Comparable<T>> Comparator<T> getComparator(){
+        return (Comparator<T>) COMPARABLE_COMPARATOR;
+    }
+    @SuppressWarnings("all")
+    private static final Comparator<? extends Comparable> COMPARABLE_COMPARATOR = new Comparator<Comparable<?>>() {
+        @Override
+        public int compare(Comparable c1, Comparable c2) {
+            return c1.compareTo(c2);
+        }
+    };
+
+    private static final Predicate<?> ACCEPT_ALL = (Predicate<Object>) o -> true;
+    private static final Predicate<?> REJECT_ALL = (Predicate<Object>) o -> false;
 }

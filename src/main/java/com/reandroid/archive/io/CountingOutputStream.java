@@ -15,25 +15,28 @@
  */
 package com.reandroid.archive.io;
 
+import com.reandroid.utils.Crc32;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.zip.CRC32;
 
 public class CountingOutputStream<T extends OutputStream> extends OutputStream {
+
     private final T outputStream;
-    private CRC32 crc;
+    private Crc32 crc32;
     private long size;
     private boolean mClosed;
+
     public CountingOutputStream(T outputStream, boolean disableCrc){
         this.outputStream = outputStream;
-        CRC32 crc32;
+        Crc32 crc32;
         if(disableCrc){
             crc32 = null;
         }else {
-            crc32 = new CRC32();
+            crc32 = new Crc32();
         }
-        this.crc = crc32;
+        this.crc32 = crc32;
     }
     public CountingOutputStream(T outputStream){
         this(outputStream, false);
@@ -41,16 +44,18 @@ public class CountingOutputStream<T extends OutputStream> extends OutputStream {
 
     public void disableCrc(boolean disableCrc) {
         if(!disableCrc){
-            if(crc == null){
-                this.crc = new CRC32();
+            if(crc32 == null) {
+                this.crc32 = new Crc32();
             }
-        }else{
-            this.crc = null;
+        } else {
+            this.crc32 = null;
         }
     }
 
-    public void reset(){
-        this.crc = new CRC32();
+    public void reset() {
+        if (this.crc32 != null) {
+            this.crc32.reset();
+        }
         this.size = 0L;
     }
     public T getOutputStream() {
@@ -59,9 +64,9 @@ public class CountingOutputStream<T extends OutputStream> extends OutputStream {
     public long getSize() {
         return size;
     }
-    public long getCrc() {
-        if(crc != null){
-            return crc.getValue();
+    public long getCrc32() {
+        if(crc32 != null){
+            return crc32.getValue();
         }
         return 0;
     }
@@ -85,8 +90,8 @@ public class CountingOutputStream<T extends OutputStream> extends OutputStream {
         }
         outputStream.write(bytes, offset, length);
         this.size += length;
-        if(this.crc != null){
-            this.crc.update(bytes, offset, length);
+        if(this.crc32 != null){
+            this.crc32.update(bytes, offset, length);
         }
     }
     @Override

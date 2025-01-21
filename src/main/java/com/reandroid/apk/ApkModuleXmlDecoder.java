@@ -15,16 +15,20 @@
  */
 package com.reandroid.apk;
 
+import com.reandroid.app.AndroidManifest;
 import com.reandroid.archive.InputSource;
+import com.reandroid.arsc.chunk.Overlayable;
 import com.reandroid.arsc.chunk.PackageBlock;
 import com.reandroid.arsc.chunk.TableBlock;
 import com.reandroid.arsc.chunk.xml.AndroidManifestBlock;
 import com.reandroid.arsc.chunk.xml.ResXmlDocument;
 import com.reandroid.arsc.coder.xml.XmlCoder;
+import com.reandroid.arsc.list.OverlayableList;
 import com.reandroid.utils.io.IOUtil;
 import com.reandroid.arsc.value.*;
 import com.reandroid.json.JSONObject;
 import com.reandroid.xml.XMLFactory;
+import com.reandroid.xml.XmlIndentingSerializer;
 import org.xmlpull.v1.XmlSerializer;
 
 import java.io.File;
@@ -58,6 +62,7 @@ public class ApkModuleXmlDecoder extends ApkModuleDecoder implements Predicate<E
         decodeTableBlock(mainDirectory, tableBlock);
         decodeResFiles(mainDirectory);
         decodeValues(mainDirectory, tableBlock);
+        decodeOverlayable(mainDirectory, tableBlock);
     }
     private void decodeTableBlock(File mainDirectory, TableBlock tableBlock) throws IOException {
         try{
@@ -157,8 +162,8 @@ public class ApkModuleXmlDecoder extends ApkModuleDecoder implements Predicate<E
         for(PackageBlock packageBlock:tableBlock.listPackages()){
             decodePublicXml(mainDirectory, packageBlock);
         }
-        if(tableBlock.countPackages() == 0){
-            decodeEmptyTable(mainDirectory);
+        if(tableBlock.size() == 0){
+            decodeEmptyTable(mainDirectory, tableBlock);
         }
     }
     private void decodePublicXml(File mainDirectory, PackageBlock packageBlock)
@@ -171,12 +176,8 @@ public class ApkModuleXmlDecoder extends ApkModuleDecoder implements Predicate<E
         file = new File(file, PackageBlock.PUBLIC_XML);
         packageBlock.serializePublicXml(file);
     }
-    private void decodeEmptyTable(File mainDirectory) throws IOException {
+    private void decodeEmptyTable(File mainDirectory, TableBlock tableBlock) throws IOException {
         logMessage("Decoding empty table ...");
-        String pkgName = getApkModule().getPackageName();
-        if(pkgName == null){
-            return;
-        }
         File packageDirectory = new File(mainDirectory, TableBlock.DIRECTORY_NAME);
         packageDirectory = new File(packageDirectory, PackageBlock.DIRECTORY_NAME_PREFIX + "1");
         logMessage("Empty public.xml: "
@@ -184,29 +185,41 @@ public class ApkModuleXmlDecoder extends ApkModuleDecoder implements Predicate<E
         File file = new File(packageDirectory, PackageBlock.RES_DIRECTORY_NAME);
         file = new File(file, PackageBlock.VALUES_DIRECTORY_NAME);
         file = new File(file, PackageBlock.PUBLIC_XML);
-        PackageBlock packageBlock = new PackageBlock();
+        PackageBlock packageBlock = tableBlock.pickOrEmptyPackage();
         packageBlock.serializePublicXml(file);
     }
     @Override
     public void decodeAndroidManifest(File mainDirectory)
             throws IOException {
-        if(containsDecodedPath(AndroidManifestBlock.FILE_NAME)){
+        if(containsDecodedPath(AndroidManifest.FILE_NAME)){
             return;
         }
-        if(!getApkModule().hasAndroidManifestBlock()){
-            logMessage("Don't have: "+ AndroidManifestBlock.FILE_NAME);
-            return;
-        }
-        if(isExcluded(AndroidManifestBlock.FILE_NAME)){
+        if(!getApkModule().hasAndroidManifest()){
+            decodeEmptyAndroidManifestXml(mainDirectory);
+        }else if(isExcluded(AndroidManifest.FILE_NAME)){
             decodeAndroidManifestBin(mainDirectory);
         }else {
             decodeAndroidManifestXml(mainDirectory);
         }
     }
+    private void decodeEmptyAndroidManifestXml(File mainDirectory) throws IOException {
+        logMessage("WARN: Missing " + AndroidManifest.FILE_NAME
+                + ", could be framework apk or you are decompiling wrong apk file");
+        File file = new File(mainDirectory, AndroidManifest.FILE_NAME);
+        XmlSerializer serializer = XMLFactory.newSerializer(file);
+        serializer.startDocument("utf-8", null);
+        serializer.text("\n");
+        serializer.startTag(null, AndroidManifest.EMPTY_MANIFEST_TAG);
+        serializer.endTag(null, AndroidManifest.EMPTY_MANIFEST_TAG);
+        serializer.endDocument();
+        serializer.flush();
+        IOUtil.close(serializer);
+        addDecodedPath(AndroidManifest.FILE_NAME);
+    }
     private void decodeAndroidManifestXml(File mainDirectory)
             throws IOException {
-        AndroidManifestBlock manifestBlock = getApkModule().getAndroidManifestBlock();
-        File file = new File(mainDirectory, AndroidManifestBlock.FILE_NAME);
+        AndroidManifestBlock manifestBlock = getApkModule().getAndroidManifest();
+        File file = new File(mainDirectory, AndroidManifest.FILE_NAME);
         logMessage("Decoding: " + file.getName());
         PackageBlock packageBlock = manifestBlock.getPackageBlock();
         if(packageBlock == null){
@@ -218,19 +231,19 @@ public class ApkModuleXmlDecoder extends ApkModuleDecoder implements Predicate<E
             }
         }
         serializeXml(packageBlock, manifestBlock, file);
-        addDecodedPath(AndroidManifestBlock.FILE_NAME);
+        addDecodedPath(AndroidManifest.FILE_NAME);
     }
     private void decodeAndroidManifestBin(File mainDirectory)
             throws IOException {
-        File file = new File(mainDirectory, AndroidManifestBlock.FILE_NAME_BIN);
+        File file = new File(mainDirectory, AndroidManifest.FILE_NAME_BIN);
         logMessage("Decode manifest binary: " + file.getName());
         ApkModule apkModule = getApkModule();
         InputSource inputSource = apkModule.getManifestOriginalSource();
         if(inputSource == null){
-            inputSource = apkModule.getInputSource(AndroidManifestBlock.FILE_NAME);
+            inputSource = apkModule.getInputSource(AndroidManifest.FILE_NAME);
         }
         inputSource.write(file);
-        addDecodedPath(AndroidManifestBlock.FILE_NAME);
+        addDecodedPath(AndroidManifest.FILE_NAME);
     }
     private void serializeXml(PackageBlock packageBlock, ResXmlDocument document, File outFile)
             throws IOException {
@@ -271,6 +284,25 @@ public class ApkModuleXmlDecoder extends ApkModuleDecoder implements Predicate<E
         File resourcesDir = new File(mainDirectory, TableBlock.DIRECTORY_NAME);
         XmlCoder xmlCoder = XmlCoder.getInstance();
         xmlCoder.VALUES_XML.decodeTable(resourcesDir, tableBlock, this);
+    }
+    private void decodeOverlayable(File mainDirectory, TableBlock tableBlock) throws IOException {
+        for (PackageBlock packageBlock : tableBlock) {
+            decodeOverlayable(mainDirectory, packageBlock);
+        }
+    }
+    private void decodeOverlayable(File mainDirectory, PackageBlock packageBlock) throws IOException {
+        OverlayableList overlayableList = packageBlock.getOverlayableList();
+        if(overlayableList.isEmpty()) {
+            return;
+        }
+        logMessage("Decode: overlayable");
+        File packageDirectory = toPackageDirectory(mainDirectory, packageBlock);
+        File file = new File(packageDirectory, PackageBlock.RES_DIRECTORY_NAME);
+        file = new File(file, PackageBlock.VALUES_DIRECTORY_NAME);
+        file = new File(file, Overlayable.FILE_NAME_XML);
+        XmlSerializer serializer = new XmlIndentingSerializer(XMLFactory.newSerializer(file));
+        XMLFactory.setEnableIndentAttributes(serializer, false);
+        overlayableList.serialize(serializer);
     }
     @Override
     public boolean test(Entry entry) {

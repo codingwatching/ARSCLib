@@ -16,111 +16,109 @@
 package com.reandroid.arsc.array;
 
 import com.reandroid.arsc.io.BlockReader;
-import com.reandroid.arsc.item.ByteArray;
+import com.reandroid.arsc.item.AlignItem;
 import com.reandroid.arsc.item.IntegerItem;
+import com.reandroid.arsc.item.StringItem;
 import com.reandroid.arsc.item.StyleItem;
-import com.reandroid.json.JSONConvert;
+import com.reandroid.arsc.pool.StringPool;
 import com.reandroid.json.JSONArray;
+import com.reandroid.json.JSONConvert;
+import com.reandroid.utils.CompareUtil;
 
 import java.io.IOException;
+import java.util.Comparator;
+import java.util.Iterator;
 
-public class StyleArray extends OffsetBlockArray<StyleItem> implements JSONConvert<JSONArray> {
+public class StyleArray extends OffsetBlockArray<StyleItem> implements
+        Iterable<StyleItem>, JSONConvert<JSONArray> {
+
     public StyleArray(OffsetArray offsets, IntegerItem itemCount, IntegerItem itemStart) {
         super(offsets, itemCount, itemStart);
-        setEndBytes(END_BYTE);
     }
-    protected void onStringShifted(int index){
-        StyleItem styleItem = get(index);
-        if(styleItem == null || styleItem.getIndex() == index){
-            return;
+
+    @Override
+    public void clear() {
+        for (StyleItem styleItem : this) {
+            if (!styleItem.isNull()) {
+                styleItem.onRemoved();
+            }
         }
-        styleItem = newInstance();
-        setItem(index, styleItem);
-        styleItem.setNull(true);
-        styleItem.onDataLoaded();
+        super.clear();
     }
     @Override
-    public void clearChildes(){
-        for(StyleItem styleItem:listItems()){
-            styleItem.onRemoved();
-        }
-        super.clearChildes();
-    }
-    @Override
-    void refreshEnd4Block(BlockReader reader, ByteArray end4Block) throws IOException {
-        end4Block.clear();
-        if(reader.available()<4){
+    void refreshAlignment(BlockReader reader, AlignItem alignItem) throws IOException {
+        alignItem.clear();
+        alignItem.setFill(END_BYTE);
+        if(reader.available() < 4){
             return;
         }
-        IntegerItem integerItem=new IntegerItem();
-        while (reader.available()>=4){
-            int pos=reader.getPosition();
+        IntegerItem integerItem = new IntegerItem();
+        while (reader.available() >= 4){
+            int position = reader.getPosition();
             integerItem.readBytes(reader);
-            if(integerItem.get()!=0xFFFFFFFF){
-                reader.seek(pos);
+            if(integerItem.get() != 0xFFFFFFFF){
+                reader.seek(position);
                 break;
             }
-            end4Block.add(integerItem.getBytes());
+            alignItem.setSize(alignItem.size() + 4);
         }
     }
     @Override
-    void refreshEnd4Block(ByteArray end4Block) {
-        super.refreshEnd4Block(end4Block);
-        if(childesCount()==0){
+    void refreshAlignment(AlignItem alignItem) {
+        if(size() == 0){
+            alignItem.clear();
             return;
         }
-        end4Block.ensureArraySize(8);
-        end4Block.fill(END_BYTE);
-    }
-    @Override
-    protected void refreshChildes(){
-        // Not required
-    }
-    @Override
-    protected boolean remove(StyleItem block, boolean trim){
-        if(block == null){
-            return false;
-        }
-        boolean removed = super.remove(block, trim);
-        if(!removed && trim){
-            trimNullBlocks();
-        }
-        return removed;
+        alignItem.setFill(END_BYTE);
+        alignItem.ensureSize(8);
     }
     @Override
     public StyleItem newInstance() {
         return new StyleItem();
     }
     @Override
-    public StyleItem[] newInstance(int len) {
-        return new StyleItem[len];
+    public StyleItem[] newArrayInstance(int length) {
+        return new StyleItem[length];
+    }
+    public boolean sort() {
+        return sort(CompareUtil.getComparableComparator());
     }
 
     @Override
-    public JSONArray toJson() {
-        if(childesCount()==0){
-            return null;
+    public boolean sort(Comparator<? super StyleItem> comparator) {
+        boolean sorted = super.sort(comparator);
+        adjustIndexes();
+        trimLastItems();
+        return sorted;
+    }
+    private void adjustIndexes() {
+        Iterator<StyleItem> iterator = clonedIterator();
+        boolean adjusted = false;
+        while (iterator.hasNext()) {
+            StyleItem styleItem = iterator.next();
+            StringItem stringItem = styleItem.getStringItemInternal();
+            if(stringItem != null) {
+                int index = stringItem.getIndex();
+                if(index != styleItem.getIndex()) {
+                    moveTo(styleItem, index);
+                    adjusted = true;
+                }
+            }
         }
+        if(adjusted) {
+            getParentInstance(StringPool.class).linkStylesInternal();
+        }
+    }
+    private void trimLastItems() {
+        trimLastIf(StyleItem::isEmpty);
+    }
+    @Override
+    public JSONArray toJson() {
         return null;
     }
     @Override
     public void fromJson(JSONArray json) {
+    }
 
-    }
-    public void merge(StyleArray styleArray){
-        if(styleArray==null||styleArray==this){
-            return;
-        }
-        if(childesCount()!=0){
-            return;
-        }
-        int count=styleArray.childesCount();
-        ensureSize(count);
-        for(int i=0;i<count;i++){
-            StyleItem exist=get(i);
-            StyleItem coming=styleArray.get(i);
-            exist.merge(coming);
-        }
-    }
-    private static final byte END_BYTE= (byte) 0xFF;
+    private static final byte END_BYTE = (byte) 0xFF;
 }

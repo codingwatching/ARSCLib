@@ -15,7 +15,7 @@
   */
 package com.reandroid.xml;
 
-import com.android.org.kxml2.io.KXmlSerializer;
+import com.reandroid.xml.kxml2.KXmlSerializer;
 
 import java.io.*;
 
@@ -41,15 +41,20 @@ public class CloseableSerializer extends KXmlSerializer implements Closeable {
     @Override
     public void endDocument() throws IOException {
         super.endDocument();
-        close();
+        if (getDepth() == 0) {
+            close();
+        }
     }
     @Override
     public void close() throws IOException {
-        if(writer != null){
+        if(writer != null) {
+            flush();
             writer.close();
+            writer = null;
         }
-        if(outputStream != null){
+        if(outputStream != null) {
             outputStream.close();
+            outputStream = null;
         }
     }
 }

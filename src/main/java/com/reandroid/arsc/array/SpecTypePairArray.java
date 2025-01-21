@@ -20,16 +20,18 @@ import com.reandroid.arsc.chunk.PackageBlock;
 import com.reandroid.arsc.chunk.SpecBlock;
 import com.reandroid.arsc.chunk.TypeBlock;
 import com.reandroid.arsc.container.SpecTypePair;
-import com.reandroid.arsc.group.StringGroup;
 import com.reandroid.arsc.item.TypeString;
 import com.reandroid.arsc.pool.TypeStringPool;
 import com.reandroid.arsc.value.Entry;
 import com.reandroid.arsc.value.ResConfig;
-import com.reandroid.json.JSONConvert;
 import com.reandroid.json.JSONArray;
+import com.reandroid.json.JSONConvert;
 import com.reandroid.json.JSONObject;
 
-import java.util.*;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
 
 public class SpecTypePairArray extends BlockArray<SpecTypePair>
         implements JSONConvert<JSONArray>, Comparator<SpecTypePair> {
@@ -51,17 +53,13 @@ public class SpecTypePairArray extends BlockArray<SpecTypePair>
         sort(this);
     }
     public void removeEmptyPairs(){
-        SpecTypePair[] specTypePairs = getChildes().clone();
-        boolean foundEmpty = false;
-        for(SpecTypePair typePair:specTypePairs){
+        Iterator<SpecTypePair> iterator = clonedIterator();
+        while (iterator.hasNext()){
+            SpecTypePair typePair = iterator.next();
             typePair.removeEmptyTypeBlocks();
             if(typePair.isEmpty()){
-                super.remove(typePair, false);
-                foundEmpty=true;
+                super.remove(typePair);
             }
-        }
-        if(foundEmpty){
-            trimNullBlocks();
         }
     }
     public boolean isEmpty(){
@@ -88,6 +86,13 @@ public class SpecTypePairArray extends BlockArray<SpecTypePair>
             return null;
         }
         return typeBlock.getEntry(entryId);
+    }
+    public Entry getEntry(ResConfig resConfig, int typeId, int entryId){
+        SpecTypePair specTypePair = getSpecTypePair(typeId);
+        if (specTypePair != null) {
+            return specTypePair.getEntry(resConfig, entryId);
+        }
+        return null;
     }
     public TypeBlock getOrCreateTypeBlock(byte typeId, String qualifiers){
         SpecTypePair pair=getOrCreate(typeId);
@@ -138,22 +143,30 @@ public class SpecTypePairArray extends BlockArray<SpecTypePair>
         return getSpecTypePair((byte) typeId);
     }
     public SpecTypePair getSpecTypePair(byte typeId){
-        SpecTypePair[] items = getChildes();
-        if(items == null){
-            return null;
+        SpecTypePair specTypePair = get((typeId & 0xff) - 1);
+        if (specTypePair != null && specTypePair.getTypeId() == typeId) {
+            return specTypePair;
         }
-        int length = items.length;
-        for(int i = 0; i < length; i++){
-            SpecTypePair specTypePair = items[i];
+        Iterator<SpecTypePair> iterator = iterator();
+        while (iterator.hasNext()) {
+            specTypePair = iterator.next();
             if(specTypePair != null && specTypePair.getTypeId() == typeId){
                 return specTypePair;
             }
         }
         return null;
     }
-    public SpecTypePair getSpecTypePair(String typeName){
+    public SpecTypePair getSpecTypePair(String typeName) {
         if(typeName == null){
             return null;
+        }
+        PackageBlock packageBlock = getPackageBlock();
+        if (packageBlock != null) {
+            SpecTypePair specTypePair = getSpecTypePair(
+                    packageBlock.typeIdOf(typeName));
+            if (specTypePair != null) {
+                return specTypePair;
+            }
         }
         Iterator<SpecTypePair> itr = iterator(true);
         while (itr.hasNext()){
@@ -198,7 +211,7 @@ public class SpecTypePairArray extends BlockArray<SpecTypePair>
         return new SpecTypePair();
     }
     @Override
-    public SpecTypePair[] newInstance(int len) {
+    public SpecTypePair[] newArrayInstance(int len) {
         return new SpecTypePair[len];
     }
     @Override
@@ -206,7 +219,7 @@ public class SpecTypePairArray extends BlockArray<SpecTypePair>
 
     }
     @Override
-    protected void onPreRefreshRefresh(){
+    protected void onPreRefresh(){
         validateEntryCounts();
     }
 
@@ -222,54 +235,43 @@ public class SpecTypePairArray extends BlockArray<SpecTypePair>
     }
     private Map<Byte, Integer> mapHighestEntryCount(){
         Map<Byte, Integer> results=new HashMap<>();
-        SpecTypePair[] childes=getChildes();
-        for (SpecTypePair pair:childes){
-            int count=pair.getHighestEntryCount();
-            byte id=pair.getTypeId();
-            Integer exist=results.get(id);
-            if(exist==null || count>exist){
+        Iterator<SpecTypePair> iterator = iterator();
+        while (iterator.hasNext()){
+            SpecTypePair typePair = iterator.next();
+            int count = typePair.getHighestEntryCount();
+            byte id = typePair.getTypeId();
+            Integer exist = results.get(id);
+            if(exist == null || count > exist){
                 results.put(id, count);
             }
         }
         return results;
     }
     public int getSmallestTypeId(){
-        SpecTypePair[] childes=getChildes();
-        if(childes==null){
-            return 0;
-        }
-        int result=0;
-        boolean firstFound=false;
-        for (int i=0;i<childes.length;i++){
-            SpecTypePair pair=childes[i];
-            if(pair==null){
-                continue;
-            }
-            int id=pair.getId();
+        int result = 0;
+        boolean firstFound = false;
+        Iterator<SpecTypePair> iterator = iterator();
+        while (iterator.hasNext()){
+            SpecTypePair typePair = iterator.next();
+            int id = typePair.getId();
             if(!firstFound){
-                result=id;
+                result = id;
             }
-            firstFound=true;
-            if(id<result){
-                result=id;
+            firstFound = true;
+            if(id < result){
+                result = id;
             }
         }
         return result;
     }
     public int getHighestTypeId(){
-        SpecTypePair[] childes=getChildes();
-        if(childes==null){
-            return 0;
-        }
-        int result=0;
-        for (int i=0;i<childes.length;i++){
-            SpecTypePair pair=childes[i];
-            if(pair==null){
-                continue;
-            }
-            int id=pair.getId();
-            if(id>result){
-                result=id;
+        int result = 0;
+        Iterator<SpecTypePair> iterator = iterator();
+        while (iterator.hasNext()){
+            SpecTypePair typePair = iterator.next();
+            int id = typePair.getId();
+            if(id > result){
+                result = id;
             }
         }
         return result;
@@ -279,9 +281,9 @@ public class SpecTypePairArray extends BlockArray<SpecTypePair>
         if(typeStringPool == null){
             return null;
         }
-        StringGroup<TypeString> group = typeStringPool.get(typeName);
-        if(group != null){
-            return group.get(0);
+        TypeString typeString = typeStringPool.getString(typeName);
+        if(typeString != null){
+            return typeString;
         }
         int id = typeStringPool.getLastId() + 1;
         return typeStringPool.getOrCreate(id, typeName);
@@ -345,15 +347,12 @@ public class SpecTypePairArray extends BlockArray<SpecTypePair>
      */
     @Deprecated
     public SpecTypePair searchByTypeName(String typeName){
-        if(typeName==null){
+        if(typeName == null){
             return null;
         }
-        SpecTypePair[] childes=getChildes();
-        if(childes==null){
-            return null;
-        }
-        for(int i=0;i<childes.length;i++){
-            SpecTypePair specTypePair=childes[i];
+        Iterator<SpecTypePair> iterator = iterator();
+        while (iterator.hasNext()){
+            SpecTypePair specTypePair = iterator.next();
             if(typeName.equals(specTypePair.getTypeName())){
                 return specTypePair;
             }

@@ -15,19 +15,18 @@
   */
 package com.reandroid.apk;
 
-import com.reandroid.archive.BlockInputSource;
 import com.reandroid.archive.ZipEntryMap;
 import com.reandroid.archive.block.ApkSignatureBlock;
 import com.reandroid.arsc.chunk.TableBlock;
-import com.reandroid.arsc.pool.TableStringPool;
-import com.reandroid.arsc.pool.builder.StringPoolMerger;
+import com.reandroid.utils.collection.ArrayCollection;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.*;
 
-public class ApkBundle {
+public class ApkBundle implements Closeable {
     private final Map<String, ApkModule> mModulesMap;
     private APKLogger apkLogger;
     public ApkBundle(){
@@ -35,6 +34,9 @@ public class ApkBundle {
     }
 
     public ApkModule mergeModules() throws IOException {
+        return mergeModules(false);
+    }
+    public ApkModule mergeModules(boolean force) throws IOException {
         List<ApkModule> moduleList=getApkModuleList();
         if(moduleList.size()==0){
             throw new FileNotFoundException("Nothing to merge, empty modules");
@@ -43,13 +45,11 @@ public class ApkBundle {
         result.setAPKLogger(apkLogger);
         result.setLoadDefaultFramework(false);
 
-        mergeStringPools(result);
-
         ApkModule base=getBaseModule();
-        if(base==null){
-            base=getLargestTableModule();
+        if(base == null){
+            base = getLargestTableModule();
         }
-        result.merge(base);
+        result.merge(base, force);
         ApkSignatureBlock signatureBlock = null;
         for(ApkModule module:moduleList){
             ApkSignatureBlock asb = module.getApkSignatureBlock();
@@ -62,7 +62,7 @@ public class ApkBundle {
             if(signatureBlock == null){
                 signatureBlock = asb;
             }
-            result.merge(module);
+            result.merge(module, force);
         }
 
         result.setApkSignatureBlock(signatureBlock);
@@ -74,32 +74,6 @@ public class ApkBundle {
         }
         result.getZipEntryMap().autoSortApkFiles();
         return result;
-    }
-    private void mergeStringPools(ApkModule mergedModule) throws IOException {
-        if(!hasOneTableBlock() || mergedModule.hasTableBlock()){
-            return;
-        }
-        logMessage("Merging string pools ... ");
-        TableBlock createdTable = new TableBlock();
-        BlockInputSource<TableBlock> inputSource=
-                new BlockInputSource<>(TableBlock.FILE_NAME, createdTable);
-        mergedModule.getZipEntryMap().add(inputSource);
-
-        StringPoolMerger poolMerger = new StringPoolMerger();
-
-        for(ApkModule apkModule:getModules()){
-            if(!apkModule.hasTableBlock()){
-                continue;
-            }
-            TableStringPool stringPool = apkModule.getVolatileTableStringPool();
-            poolMerger.add(stringPool);
-        }
-
-        poolMerger.mergeTo(createdTable.getTableStringPool());
-
-        logMessage("Merged string pools="+poolMerger.getMergedPools()
-                +", style="+poolMerger.getMergedStyleStrings()
-                +", strings="+poolMerger.getMergedStrings());
     }
     private String generateMergedModuleName(){
         Set<String> moduleNames=mModulesMap.keySet();
@@ -137,7 +111,7 @@ public class ApkBundle {
         return null;
     }
     public List<ApkModule> getApkModuleList(){
-        return new ArrayList<>(mModulesMap.values());
+        return new ArrayCollection<>(mModulesMap.values());
     }
     public void loadApkDirectory(File dir) throws IOException{
         loadApkDirectory(dir, false);
@@ -195,6 +169,13 @@ public class ApkBundle {
             }
         }
         return false;
+    }
+    @Override
+    public void close() throws IOException {
+        for(ApkModule module : mModulesMap.values()) {
+            module.close();
+        }
+        mModulesMap.clear();
     }
     public void setAPKLogger(APKLogger logger) {
         this.apkLogger = logger;

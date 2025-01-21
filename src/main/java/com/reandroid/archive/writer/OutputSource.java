@@ -35,6 +35,7 @@ class OutputSource {
     private final InputSource inputSource;
     private LocalFileHeader lfh;
     private APKLogger apkLogger;
+    private HeaderInterceptor headerInterceptor;
 
     OutputSource(InputSource inputSource){
         this.inputSource = inputSource;
@@ -49,7 +50,7 @@ class OutputSource {
 
         if(inputSource.getMethod() != Archive.STORED){
             DeflaterOutputStream deflaterInputStream =
-                    new DeflaterOutputStream(rawCounter, new Deflater(Deflater.BEST_SPEED, true), true);
+                    new DeflaterOutputStream(rawCounter, new Deflater(Deflater.DEFAULT_COMPRESSION, true), true);
             deflateCounter = new CountingOutputStream<>(deflaterInputStream, false);
         }
         if(deflateCounter != null){
@@ -65,18 +66,19 @@ class OutputSource {
 
         if(deflateCounter != null){
             lfh.setMethod(Archive.DEFLATED);
-            lfh.setCrc(deflateCounter.getCrc());
+            lfh.setCrc(deflateCounter.getCrc32());
             lfh.setSize(deflateCounter.getSize());
         }else {
             lfh.setSize(rawCounter.getSize());
             lfh.setMethod(Archive.STORED);
-            lfh.setCrc(rawCounter.getCrc());
+            lfh.setCrc(rawCounter.getCrc32());
         }
         inputSource.disposeInputSource();
     }
     void writeCEH(ZipOutput zipOutput) throws IOException{
         LocalFileHeader lfh = getLocalFileHeader();
         CentralEntryHeader ceh = CentralEntryHeader.fromLocalFileHeader(lfh);
+        notifyCEHWrite(ceh);
         ceh.writeBytes(zipOutput.getOutputStream());
     }
     void writeDD(ZipOutput apkFileWriter) throws IOException{
@@ -84,6 +86,7 @@ class OutputSource {
         if(dataDescriptor == null){
             return;
         }
+        notifyDDWrite(dataDescriptor);
         dataDescriptor.writeBytes(apkFileWriter.getOutputStream());
     }
     void writeLFH(ZipOutput zipOutput, ZipAligner zipAligner) throws IOException {
@@ -91,16 +94,41 @@ class OutputSource {
         if(zipAligner != null){
             zipAligner.align(zipOutput.position(), lfh);
         }
+        notifyLFHWrite(lfh);
         lfh.writeBytes(zipOutput.getOutputStream());
+    }
+
+    public void setHeaderInterceptor(HeaderInterceptor interceptor) {
+        this.headerInterceptor = interceptor;
+    }
+    private void notifyLFHWrite(LocalFileHeader lfh){
+        HeaderInterceptor interceptor = this.headerInterceptor;
+        if(interceptor != null){
+            interceptor.onWriteLfh(lfh);
+        }
+    }
+    private void notifyCEHWrite(CentralEntryHeader ceh){
+        HeaderInterceptor interceptor = this.headerInterceptor;
+        if(interceptor != null){
+            interceptor.onWriteCeh(ceh);
+        }
+    }
+    private void notifyDDWrite(DataDescriptor dataDescriptor){
+        HeaderInterceptor interceptor = this.headerInterceptor;
+        if(interceptor != null){
+            interceptor.onWriteDD(dataDescriptor);
+        }
     }
     InputSource getInputSource() {
         return inputSource;
     }
     LocalFileHeader getLocalFileHeader(){
         if(lfh == null){
-            lfh = createLocalFileHeader();
+            LocalFileHeader lfh = createLocalFileHeader();
             lfh.setFileName(getInputSource().getAlias());
-            clearAlignment(lfh);
+            lfh.setZipAlign(0);
+            lfh.updateDataDescriptor();
+            this.lfh = lfh;
         }
         return lfh;
     }
@@ -112,11 +140,6 @@ class OutputSource {
         lfh.setFileName(inputSource.getAlias());
         lfh.setMethod(inputSource.getMethod());
         return lfh;
-    }
-    private void clearAlignment(LocalFileHeader lfh){
-        lfh.getGeneralPurposeFlag().setHasDataDescriptor(false);
-        lfh.setDataDescriptor(null);
-        lfh.setZipAlign(0);
     }
     void logLargeFileWrite(){
         APKLogger logger =  this.apkLogger;
@@ -147,5 +170,5 @@ class OutputSource {
             apkLogger.logVerbose(msg);
         }
     }
-    private static final long LOG_LARGE_FILE_SIZE = 2L * 1000 * 1000 * 1024;
+    private static final long LOG_LARGE_FILE_SIZE = 2L * 1000 * 1024;
 }

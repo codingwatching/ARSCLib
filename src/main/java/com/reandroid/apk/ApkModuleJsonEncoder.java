@@ -22,7 +22,8 @@ import java.io.File;
 import java.io.IOException;
 import java.util.List;
 
-public class ApkModuleJsonEncoder extends ApkModuleEncoder{
+public class ApkModuleJsonEncoder extends ApkModuleEncoder {
+
     private ApkModule apkModule;
     public ApkModuleJsonEncoder(){
         super();
@@ -45,7 +46,7 @@ public class ApkModuleJsonEncoder extends ApkModuleEncoder{
         return apkModule;
     }
     private void scanResJsonDirs(File mainDirectory){
-        File resJsonDir = new File(mainDirectory, ApkUtil.RES_JSON_NAME);
+        File resJsonDir = new File(mainDirectory, TableBlock.RES_JSON_DIRECTORY_NAME);
         List<File> jsonFileList = ApkUtil.recursiveFiles(resJsonDir);
         for(File file:jsonFileList){
             scanResJsonFile(resJsonDir, file);
@@ -89,7 +90,6 @@ public class ApkModuleJsonEncoder extends ApkModuleEncoder{
             return false;
         }
         SplitJsonTableInputSource inputSource = new SplitJsonTableInputSource(resourcesDir);
-        inputSource.setApkLogger(getApkLogger());
         getApkModule().add(inputSource);
         return true;
     }
@@ -101,7 +101,6 @@ public class ApkModuleJsonEncoder extends ApkModuleEncoder{
         }
         SingleJsonTableInputSource inputSource = SingleJsonTableInputSource
                 .fromFile(resourcesDir, file);
-        inputSource.setApkLogger(getApkLogger());
         getApkModule().add(inputSource);
         return true;
     }

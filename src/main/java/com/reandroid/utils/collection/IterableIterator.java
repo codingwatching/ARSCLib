@@ -19,14 +19,14 @@ import java.util.Iterator;
 import java.util.NoSuchElementException;
 
 public abstract class IterableIterator<E, T> implements Iterator<T> {
-    private final Iterator<E> iterator;
+    private final Iterator<? extends E> iterator;
     private Iterator<T> mCurrent;
     private int mCount;
     private boolean mStop;
-    public IterableIterator(Iterator<E> iterator){
+    public IterableIterator(Iterator<? extends E> iterator){
         this.iterator = iterator;
     }
-    public int getCount() {
+    public int getCountValue() {
         return mCount;
     }
     public void stop(){

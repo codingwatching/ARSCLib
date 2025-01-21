@@ -15,14 +15,40 @@
  */
 package com.reandroid.xml;
 
+import com.reandroid.utils.ObjectsUtil;
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
+import org.xmlpull.v1.XmlSerializer;
 
-import java.io.File;
+import java.io.Closeable;
 import java.io.IOException;
 
 public class XMLUtil {
-    public static String NEW_LINE="\n";
+
+    public static String decodeEntityRef(String text) {
+        if(text == null || text.length() == 0){
+            return "";
+        }
+        if("lt".equals(text)){
+            return "<";
+        }else if("gt".equals(text)){
+            return ">";
+        }else if("amp".equals(text)){
+            return  "&";
+        }else if("quot".equals(text)){
+            return  "\"";
+        }else if("apos".equals(text)){
+            return  "'";
+        }
+        if(text.charAt(0) == '#'){
+            try{
+                char ch = (char) Integer.parseInt(text.substring(1));
+                return String.valueOf(ch);
+            }catch (NumberFormatException ignored){
+            }
+        }
+        return text;
+    }
 
     public static String splitName(String name){
         if(name == null){
@@ -58,6 +84,16 @@ public class XMLUtil {
         }
         return event;
     }
+    public static int ensureTag(XmlPullParser parser)
+            throws IOException, XmlPullParserException {
+        int event = parser.getEventType();
+        while (event != XmlPullParser.START_TAG &&
+                event != XmlPullParser.END_TAG  &&
+                event != XmlPullParser.END_DOCUMENT){
+            event = parser.next();
+        }
+        return event;
+    }
     public static boolean isEmpty(String s){
         if(s==null){
             return true;
@@ -79,53 +115,6 @@ public class XMLUtil {
         str=str.replaceAll(">", "&gt;");
         return str;
     }
-    public static String escapeQuote(String str){
-        if(str==null){
-            return null;
-        }
-        int i = str.indexOf('"');
-        if(i<0){
-            return str;
-        }
-        str=str.replaceAll("\"", "&quot;");
-        return str;
-    }
-    public static String unEscapeXmlChars(String str){
-        if(str==null){
-            return null;
-        }
-        int i=str.indexOf('&');
-        if(i<0){
-            return str;
-        }
-        str=str.replaceAll("&amp;", "&");
-        str=str.replaceAll("&lt;", "<");
-        str=str.replaceAll("&gt;", ">");
-        str=str.replaceAll("&quot;", "\"");
-        return str;
-    }
-    public static String trimQuote(String txt){
-        if(txt==null){
-            return null;
-        }
-        String tmp=txt.trim();
-        if(tmp.length()==0){
-            return txt;
-        }
-        char c1=tmp.charAt(0);
-        if(c1!='"'){
-            return txt;
-        }
-        int end=tmp.length()-1;
-        c1=tmp.charAt(end);
-        if(c1!='"'){
-            return txt;
-        }
-        if(end<=1){
-            return "";
-        }
-        return tmp.substring(1,end);
-    }
     public static String toEventName(int eventType){
         String[] types = EVENT_TYPES;
         if(eventType < 0 || eventType >= types.length){
@@ -133,6 +122,57 @@ public class XMLUtil {
         }
         return types[eventType];
     }
+    public static boolean getFeatureSafe(XmlPullParser parser, String name, boolean def){
+        try {
+            return parser.getFeature(name);
+        } catch (Throwable ignored){
+            return def;
+        }
+    }
+    public static void setFeatureSafe(XmlPullParser parser, String name, boolean state){
+        try{
+            parser.setFeature(name, state);
+        }catch (Throwable ignored){
+        }
+    }
+    public static void setFeatureSafe(XmlSerializer serializer, String name, boolean state){
+        try {
+            serializer.setFeature(name, state);
+        } catch (Throwable ignored) {
+        }
+    }
+    public static void close(XmlSerializer serializer) {
+        if(serializer != null) {
+            try {
+                serializer.flush();
+            } catch (IOException ignored) {
+            }
+        }
+        if(serializer instanceof Closeable) {
+            Closeable closeable = (Closeable) serializer;
+            try {
+                closeable.close();
+            } catch (IOException ignored) {
+            }
+        }
+    }
+
+    public static Object getLocation(XmlPullParser parser) {
+        try {
+            return parser.getProperty(XMLUtil.PROPERTY_LOCATION);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+    public static void setLocation(XmlPullParser parser, Object location) {
+        try {
+            parser.setProperty(XMLUtil.PROPERTY_LOCATION, location);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static final String FEATURE_INDENT_OUTPUT = ObjectsUtil.of("http://xmlpull.org/v1/doc/features.html#indent-output");
+    public static final String PROPERTY_LOCATION = ObjectsUtil.of("http://xmlpull.org/v1/doc/properties.html#location");
 
     public static String [] EVENT_TYPES = {
             "START_DOCUMENT",

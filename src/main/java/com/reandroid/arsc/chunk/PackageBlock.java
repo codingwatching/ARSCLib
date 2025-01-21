@@ -15,7 +15,7 @@
  */
 package com.reandroid.arsc.chunk;
 
-import com.reandroid.arsc.BuildInfo;
+import com.reandroid.arsc.ARSCLib;
 import com.reandroid.arsc.array.LibraryInfoArray;
 import com.reandroid.arsc.array.SpecTypePairArray;
 import com.reandroid.arsc.base.Block;
@@ -26,23 +26,28 @@ import com.reandroid.arsc.coder.xml.XmlEncodeException;
 import com.reandroid.arsc.container.BlockList;
 import com.reandroid.arsc.container.PackageBody;
 import com.reandroid.arsc.container.SpecTypePair;
-import com.reandroid.arsc.model.ResourceEntry;
 import com.reandroid.arsc.header.PackageHeader;
+import com.reandroid.arsc.io.BlockReader;
 import com.reandroid.arsc.item.TypeString;
 import com.reandroid.arsc.list.OverlayableList;
 import com.reandroid.arsc.list.StagedAliasList;
+import com.reandroid.arsc.model.ResourceEntry;
 import com.reandroid.arsc.model.ResourceLibrary;
+import com.reandroid.arsc.model.ResourceName;
+import com.reandroid.arsc.model.ResourceType;
 import com.reandroid.arsc.pool.SpecStringPool;
 import com.reandroid.arsc.pool.TableStringPool;
 import com.reandroid.arsc.pool.TypeStringPool;
+import com.reandroid.arsc.refactor.ResourceMergeOption;
 import com.reandroid.arsc.value.*;
 import com.reandroid.common.Namespace;
 import com.reandroid.json.JSONArray;
 import com.reandroid.json.JSONConvert;
 import com.reandroid.json.JSONObject;
-import com.reandroid.utils.*;
-import com.reandroid.utils.collection.EmptyIterator;
-import com.reandroid.utils.collection.IterableIterator;
+import com.reandroid.utils.HexUtil;
+import com.reandroid.utils.ObjectsUtil;
+import com.reandroid.utils.StringsUtil;
+import com.reandroid.utils.collection.*;
 import com.reandroid.utils.io.IOUtil;
 import com.reandroid.xml.XMLElement;
 import com.reandroid.xml.XMLFactory;
@@ -53,7 +58,11 @@ import org.xmlpull.v1.XmlSerializer;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.*;
+import java.io.OutputStream;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
 import java.util.function.Predicate;
 
 
@@ -86,11 +95,30 @@ public class PackageBlock extends Chunk<PackageHeader>
         addChild(mSpecStringPool);
         addChild(mBody);
     }
+    public void changePackageId(int packageIdOld, int packageIdNew){
+        Iterator<ValueItem> iterator = allValues();
+        while (iterator.hasNext()){
+            ValueItem valueItem = iterator.next();
+            changePackageId(valueItem, packageIdOld, packageIdNew);
+        }
+        if(packageIdOld == getId()){
+            setId(packageIdNew);
+        }
+    }
+    public Iterator<ValueItem> allValues(){
+        return new MergingIterator<>(new ComputeIterator<>(getSpecTypePairs(),
+                SpecTypePair::allValues));
+    }
+
     public Object getTag(){
         return mTag;
     }
     public void setTag(Object tag){
         this.mTag = tag;
+    }
+
+    public Iterator<ResourceType> getTypes() {
+        return ComputeIterator.of(getSpecTypePairs(), ResourceType::new);
     }
     public ResourceEntry getResource(int resourceId){
         int packageId = (resourceId >> 24 ) & 0xff;
@@ -133,6 +161,12 @@ public class PackageBlock extends Chunk<PackageHeader>
         }
         return new ResourceEntry(this, entry.getResourceId());
     }
+    public ResourceEntry getResource(ResourceName resourceName) {
+        if(resourceName == null || !resourceName.matchesPackageName(getName())) {
+            return null;
+        }
+        return getResource(resourceName.getType(), resourceName.getName());
+    }
     public ResourceEntry getResource(String type, String name){
         SpecTypePair specTypePair =
                 getSpecTypePair(type);
@@ -163,11 +197,22 @@ public class PackageBlock extends Chunk<PackageHeader>
         }
         return null;
     }
-    public Iterator<ResourceEntry> getResources(){
-        return new IterableIterator<SpecTypePair, ResourceEntry>(listSpecTypePairs().iterator()) {
+    public Iterator<ResourceEntry> getResources() {
+        return new IterableIterator<SpecTypePair, ResourceEntry>(getSpecTypePairs()) {
             @Override
             public Iterator<ResourceEntry> iterator(SpecTypePair element) {
                 return element.getResources();
+            }
+        };
+    }
+    public Iterator<ResourceEntry> getResources(String type){
+        return new IterableIterator<SpecTypePair, ResourceEntry>(getSpecTypePairs()) {
+            @Override
+            public Iterator<ResourceEntry> iterator(SpecTypePair element) {
+                if(type.equals(element.getTypeName())){
+                    return element.getResources();
+                }
+                return EmptyIterator.of();
             }
         };
     }
@@ -175,13 +220,15 @@ public class PackageBlock extends Chunk<PackageHeader>
         int count = 0;
         TableBlock tableBlock = getTableBlock();
         if(tableBlock != null){
-            count = tableBlock.countPackages();
+            count = tableBlock.size();
         }
         return DIRECTORY_NAME_PREFIX + StringsUtil.formatNumber(getIndex() + 1, count);
     }
     public boolean hasValidTypeNames(){
         Set<String> unique = new HashSet<>();
-        for(SpecTypePair specTypePair : listSpecTypePairs()){
+        Iterator<SpecTypePair> iterator = getSpecTypePairs();
+        while (iterator.hasNext()){
+            SpecTypePair specTypePair = iterator.next();
             String typeName = specTypePair.getTypeName();
             if(!CommonType.isCommonTypeName(typeName) || unique.contains(typeName)){
                 return false;
@@ -190,8 +237,8 @@ public class PackageBlock extends Chunk<PackageHeader>
         }
         return true;
     }
-    public int removeUnusedSpecs(){
-        return getSpecStringPool().removeUnusedStrings().size();
+    public boolean removeUnusedSpecs(){
+        return getSpecStringPool().removeUnusedStrings();
     }
     public String refreshFull(){
         return refreshFull(true);
@@ -200,10 +247,8 @@ public class PackageBlock extends Chunk<PackageHeader>
         int sizeOld = getHeaderBlock().getChunkSize();
         StringBuilder message = new StringBuilder();
         boolean appendOnce = false;
-        int count = removeUnusedSpecs();
-        if(count != 0){
-            message.append("Removed unused spec strings = ");
-            message.append(count);
+        if(removeUnusedSpecs()){
+            message.append("Removed unused spec strings");
             appendOnce = true;
         }
         getSpecStringPool().sort();
@@ -232,19 +277,21 @@ public class PackageBlock extends Chunk<PackageHeader>
         return null;
     }
     public void linkTableStringsInternal(TableStringPool tableStringPool){
-        for(SpecTypePair specTypePair : listSpecTypePairs()){
-            specTypePair.linkTableStringsInternal(tableStringPool);
+        Iterator<SpecTypePair> iterator = getSpecTypePairs();
+        while (iterator.hasNext()){
+            iterator.next().linkTableStringsInternal(tableStringPool);
         }
     }
     public void linkSpecStringsInternal(SpecStringPool specStringPool){
-        for(SpecTypePair specTypePair : listSpecTypePairs()){
-            specTypePair.linkSpecStringsInternal(specStringPool);
+        Iterator<SpecTypePair> iterator = getSpecTypePairs();
+        while (iterator.hasNext()){
+            iterator.next().linkSpecStringsInternal(specStringPool);
         }
     }
     public void destroy(){
         getPackageBody().destroy();
-        getTypeStringPool().destroy();
-        getSpecStringPool().destroy();
+        getTypeStringPool().clear();
+        getSpecStringPool().clear();
         setId(0);
         setName("");
     }
@@ -300,6 +347,9 @@ public class PackageBlock extends Chunk<PackageHeader>
     public Entry getEntry(ResConfig resConfig, String type, String name){
         return getSpecTypePairArray().getEntry(resConfig, type, name);
     }
+    public Entry getEntry(ResConfig resConfig, int typeId, int entryId) {
+        return getSpecTypePairArray().getEntry(resConfig, typeId, entryId);
+    }
     public Entry getOrCreate(String qualifiers, String type, String name){
         return getOrCreate(ResConfig.parse(qualifiers), type, name);
     }
@@ -315,6 +365,10 @@ public class PackageBlock extends Chunk<PackageHeader>
     public TypeBlock getOrCreateTypeBlock(ResConfig resConfig, String typeName){
         SpecTypePair specTypePair = getOrCreateSpecTypePair(typeName);
         return specTypePair.getOrCreateTypeBlock(resConfig);
+    }
+    public SpecTypePair getOrCreateSpecTypePair(int typeId, String typeName){
+        getOrCreateTypeString(typeId, typeName);
+        return getSpecTypePairArray().getOrCreate((byte) typeId);
     }
     public SpecTypePair getOrCreateSpecTypePair(String typeName){
         return getSpecTypePairArray().getOrCreate(typeName);
@@ -344,31 +398,25 @@ public class PackageBlock extends Chunk<PackageHeader>
     public OverlayableList getOverlayableList(){
         return mBody.getOverlayableList();
     }
-    public BlockList<OverlayablePolicy> getOverlayablePolicyList(){
-        return mBody.getOverlayablePolicyList();
-    }
     public void sortTypes(){
         getSpecTypePairArray().sort();
     }
 
 
     @Override
-    protected void onPreRefreshRefresh() {
+    protected void onPreRefresh() {
         removeEmpty();
-        super.onPreRefreshRefresh();
+        super.onPreRefresh();
     }
     public void removeEmpty(){
         getSpecTypePairArray().removeEmptyPairs();
     }
     public boolean isEmpty(){
-        return getSpecTypePairArray().isEmpty();
+        return getId() == 0 && mBody.isEmpty();
     }
     @Override
     public int getId(){
         return getHeaderBlock().getPackageId().get();
-    }
-    public void setId(byte id){
-        setId(0xff & id);
     }
     public void setId(int id){
         getHeaderBlock().getPackageId().set(id);
@@ -439,6 +487,13 @@ public class PackageBlock extends Chunk<PackageHeader>
         }
         return null;
     }
+    public boolean isMultiPackage(){
+        TableBlock tableBlock = getTableBlock();
+        if(tableBlock != null) {
+            return tableBlock.isMultiPackage();
+        }
+        return false;
+    }
     public String typeNameOf(int typeId){
         TypeString typeString = getTypeStringPool().getById(typeId);
         if(typeString != null){
@@ -476,8 +531,8 @@ public class PackageBlock extends Chunk<PackageHeader>
     public void trimConfigSizes(int resConfigSize){
         getSpecTypePairArray().trimConfigSizes(resConfigSize);
     }
-    public Collection<LibraryInfo> listLibraryInfo(){
-        return getLibraryBlock().listLibraryInfo();
+    public Iterator<LibraryInfo> getLibraryInfo(){
+        return getLibraryBlock().iterator();
     }
 
     public void addLibrary(LibraryBlock libraryBlock){
@@ -529,12 +584,8 @@ public class PackageBlock extends Chunk<PackageHeader>
         });
     }
     private Iterator<SpecTypePair> getIdSpecs(){
-        return getSpecTypePairArray().iterator(new Predicate<SpecTypePair>() {
-            @Override
-            public boolean test(SpecTypePair specTypePair) {
-                return specTypePair != null && specTypePair.isTypeId();
-            }
-        });
+        return getSpecTypePairArray().iterator(
+                specTypePair -> specTypePair != null && specTypePair.isTypeId());
     }
     public SpecTypePair getSpecTypePair(String typeName){
         return getSpecTypePair(typeIdOf(typeName));
@@ -543,8 +594,15 @@ public class PackageBlock extends Chunk<PackageHeader>
         return getSpecTypePairArray().getSpecTypePair((byte) typeId);
     }
 
-    public Collection<SpecTypePair> listSpecTypePairs(){
+    public Iterable<SpecTypePair> listSpecTypePairs(){
         return getSpecTypePairArray().listItems();
+    }
+    public Iterator<ResConfig> getResConfigs(){
+        return new MergingIterator<>(new ComputeIterator<>(getSpecTypePairs(),
+                SpecTypePair::getResConfigs));
+    }
+    public Iterator<SpecTypePair> getSpecTypePairs(){
+        return getSpecTypePairArray().iterator();
     }
 
     private void refreshTypeStringPoolOffset(){
@@ -552,14 +610,14 @@ public class PackageBlock extends Chunk<PackageHeader>
         getHeaderBlock().getTypeStringPoolOffset().set(pos);
     }
     private void refreshTypeStringPoolCount(){
-        getHeaderBlock().getTypeStringPoolCount().set(mTypeStringPool.countStrings());
+        getHeaderBlock().getTypeStringPoolCount().set(mTypeStringPool.size());
     }
     private void refreshSpecStringPoolOffset(){
         int pos=countUpTo(mSpecStringPool);
         getHeaderBlock().getSpecStringPoolOffset().set(pos);
     }
     private void refreshSpecStringCount(){
-        getHeaderBlock().getSpecStringPoolCount().set(mSpecStringPool.countStrings());
+        getHeaderBlock().getSpecStringPoolCount().set(mSpecStringPool.size());
     }
     @Override
     public void onChunkLoaded() {
@@ -597,8 +655,9 @@ public class PackageBlock extends Chunk<PackageHeader>
         }
     }
     private void serializePublicXmlTypes(XmlSerializer serializer) throws IOException {
-        for(SpecTypePair specTypePair : listSpecTypePairs()){
-            specTypePair.serializePublicXml(serializer);
+        Iterator<SpecTypePair> iterator = getSpecTypePairs();
+        while (iterator.hasNext()){
+            iterator.next().serializePublicXml(serializer);
         }
     }
     private void writePackageInfo(XmlSerializer serializer) throws IOException {
@@ -609,6 +668,10 @@ public class PackageBlock extends Chunk<PackageHeader>
         int id = getId();
         if(id != 0){
             serializer.attribute(null, ATTR_id, HexUtil.toHex2((byte)id));
+        }
+        TableBlock tableBlock = getTableBlock();
+        if(tableBlock !=null && tableBlock.isEmpty() && tableBlock.isNull()){
+            serializer.attribute(null, TableBlock.ATTR_null_table, "true");
         }
     }
     public void parsePublicXml(XmlPullParser parser) throws IOException,
@@ -627,13 +690,13 @@ public class PackageBlock extends Chunk<PackageHeader>
     public JSONObject toJson(boolean addTypes) {
         JSONObject jsonObject=new JSONObject();
 
-        jsonObject.put(BuildInfo.NAME_arsc_lib_version, BuildInfo.getVersion());
+        jsonObject.put(ARSCLib.NAME_arsc_lib_version, ARSCLib.getVersion());
 
         jsonObject.put(NAME_package_id, getId());
         jsonObject.put(NAME_package_name, getName());
         jsonObject.put(NAME_specs, getSpecTypePairArray().toJson(!addTypes));
         LibraryInfoArray libraryInfoArray = getLibraryBlock().getLibraryInfoArray();
-        if(libraryInfoArray.childesCount()>0){
+        if(libraryInfoArray.size()>0){
             jsonObject.put(NAME_libraries,libraryInfoArray.toJson());
         }
         StagedAlias stagedAlias =
@@ -642,9 +705,11 @@ public class PackageBlock extends Chunk<PackageHeader>
             jsonObject.put(NAME_staged_aliases,
                     stagedAlias.getStagedAliasEntryArray().toJson());
         }
-        JSONArray jsonArray = getOverlayableList().toJson();
-        if(jsonArray!=null){
-            jsonObject.put(NAME_overlaybles, jsonArray);
+        if (addTypes) {
+            JSONArray jsonArray = getOverlayableList().toJson();
+            if(jsonArray != null){
+                jsonObject.put(NAME_overlaybles, jsonArray);
+            }
         }
         return jsonObject;
     }
@@ -681,30 +746,65 @@ public class PackageBlock extends Chunk<PackageHeader>
         }
         setName(packageBlock.getName());
         getLibraryBlock().merge(packageBlock.getLibraryBlock());
-        mergeSpecStringPool(packageBlock);
+        getSpecStringPool().merge(packageBlock.getSpecStringPool());
         getSpecTypePairArray().merge(packageBlock.getSpecTypePairArray());
         getOverlayableList().merge(packageBlock.getOverlayableList());
         getStagedAliasList().merge(packageBlock.getStagedAliasList());
     }
-    private void mergeSpecStringPool(PackageBlock coming){
-        this.getSpecStringPool().addStrings(
-                coming.getSpecStringPool().toStringList());
+
+    public ResourceEntry mergeWithName(ResourceMergeOption mergeOption, ResourceEntry resourceEntry) {
+        ResourceEntry exist = getResource(resourceEntry.getType(), resourceEntry.getName());
+        if(exist != null && !exist.isEmpty()) {
+            return exist;
+        }
+        int id = 0;
+        Iterator<Entry> iterator = resourceEntry.iterator(mergeOption.getKeepEntryConfigs());
+        while (iterator.hasNext()) {
+            Entry coming = iterator.next();
+            if (coming.isNull()) {
+                continue;
+            }
+            Entry entry = mergeWithName(mergeOption, coming);
+            if(id == 0){
+                id = entry.getResourceId();
+            }
+        }
+        ResourceEntry result = getResource(id);
+        if(result == null){
+            result = getTableBlock().getResource(id);
+        }
+        return result;
+    }
+    private Entry mergeWithName(ResourceMergeOption mergeOption, Entry entry) {
+        Entry result = getOrCreate(entry.getResConfig(), entry.getTypeName(), entry.getName());
+        result.mergeWithName(mergeOption, entry);
+        return result;
     }
 
     @Override
     public int compareTo(PackageBlock pkg) {
         return Integer.compare(getId(), pkg.getId());
     }
+    public boolean isSimilarTo(PackageBlock packageBlock) {
+        if(packageBlock == this) {
+            return true;
+        }
+        if(packageBlock == null || getId() != packageBlock.getId() || !getName().equals(packageBlock.getName())) {
+            return false;
+        }
+        return getTypeStringPool().size() == packageBlock.getTypeStringPool().size() &&
+                getSpecStringPool().size() == packageBlock.getSpecStringPool().size();
+    }
     @Override
     public String toString(){
-        StringBuilder builder=new StringBuilder();
+        StringBuilder builder = new StringBuilder();
         builder.append(super.toString());
         builder.append(", id=");
         builder.append(HexUtil.toHex2((byte) getId()));
         builder.append(", name=");
         builder.append(getName());
-        int libCount=getLibraryBlock().getLibraryCount();
-        if(libCount>0){
+        int libCount = getLibraryBlock().size();
+        if(libCount > 0){
             builder.append(", libraries=");
             builder.append(libCount);
         }
@@ -724,6 +824,58 @@ public class PackageBlock extends Chunk<PackageHeader>
                 && (resourceId & 0xff000000) != 0;
     }
 
+    public static void changePackageId(ValueItem valueItem, int packageIdOld, int packageIdNew){
+        if(valueItem instanceof AttributeValue){
+            changePackageIdName(packageIdOld, packageIdNew, (AttributeValue)valueItem);
+        }
+        changePackageIdValue(packageIdOld, packageIdNew, valueItem);
+    }
+    private static void changePackageIdName(int packageIdOld, int packageIdNew, AttributeValue value){
+        int resourceId = value.getNameId();
+        if(!isResourceId(resourceId)){
+            return;
+        }
+        int id = (resourceId >> 24) & 0xff;
+        if(id != packageIdOld){
+            return;
+        }
+        resourceId = resourceId & 0xffffff;
+        id = packageIdNew << 24;
+        resourceId = id | resourceId;
+        value.setNameId(resourceId);
+    }
+    private static void changePackageIdValue(int packageIdOld, int packageIdNew, ValueItem valueItem){
+        ValueType valueType = valueItem.getValueType();
+        if(valueType == null || !valueType.isReference()){
+            return;
+        }
+        int resourceId = valueItem.getData();
+        if(!isResourceId(resourceId)){
+            return;
+        }
+        int id = (resourceId >> 24) & 0xff;
+        if(id != packageIdOld){
+            return;
+        }
+        resourceId = resourceId & 0xffffff;
+        id = packageIdNew << 24;
+        resourceId = id | resourceId;
+        valueItem.setData(resourceId);
+    }
+
+    public static int replacePackageId(int resourceId, int packageIdOld, int packageIdNew){
+        if(!isResourceId(resourceId)){
+            return resourceId;
+        }
+        int id = (resourceId >> 24) & 0xff;
+        if(id != packageIdOld){
+            return resourceId;
+        }
+        resourceId = resourceId & 0xffffff;
+        id = packageIdNew << 24;
+        resourceId = id | resourceId;
+        return resourceId;
+    }
     public static class PublicXmlParser{
         private final PackageBlock packageBlock;
         private boolean mInitializeIds = true;
@@ -821,7 +973,7 @@ public class PackageBlock extends Chunk<PackageHeader>
         }
         private void parseResourcesAttributes(XMLElement element) throws IOException {
             String packageName = element.getAttributeValue(PackageBlock.ATTR_package);
-            if(!StringsUtil.isWhiteSpace(packageName)){
+            if(!StringsUtil.isWhiteSpace(packageName) && !EMPTY_PACKAGE_NAME.equals(packageName)){
                 packageBlock.setName(packageName);
             }
             String id = element.getAttributeValue(PackageBlock.ATTR_id);
@@ -833,28 +985,93 @@ public class PackageBlock extends Chunk<PackageHeader>
                 }
                 packageBlock.setId(encodeResult.value);
             }
+            String nullTable = element.getAttributeValue(TableBlock.ATTR_null_table);
+            if("true".equals(nullTable)){
+                packageBlock.getTableBlock().setNull(true);
+            }
         }
     }
 
-    public static final String NAME_package_id = "package_id";
-    public static final String NAME_package_name = "package_name";
-    private static final String NAME_specs = "specs";
-    public static final String NAME_libraries = "libraries";
-    public static final String NAME_staged_aliases = "staged_aliases";
-    public static final String NAME_overlaybles = "overlaybles";
+    public static PackageBlock createEmptyPackage(TableBlock tableBlock){
+        PackageBlock packageBlock = new PackageBlock(){
+            @Override
+            public boolean isEmpty() {
+                return true;
+            }
+            @Override
+            public boolean isNull() {
+                return true;
+            }
+            @Override
+            public TableBlock getTableBlock() {
+                return tableBlock;
+            }
+            @Override
+            public int getId() {
+                return 0;
+            }
+            @Override
+            public void setId(int id) {
+                if(id != 0){
+                    throw new IllegalArgumentException("Can't set id to empty package");
+                }
+            }
+            @Override
+            public String getName(){
+                return PackageBlock.EMPTY_PACKAGE_NAME;
+            }
+            @Override
+            public void setName(String name) {
+                if(name != null && name.length() != 0){
+                    throw new IllegalArgumentException("Can't set name to empty package");
+                }
+            }
+            @Override
+            public int countBytes() {
+                return 0;
+            }
+            @Override
+            public byte[] getBytes() {
+                return new byte[0];
+            }
+            @Override
+            public void onReadBytes(BlockReader reader) throws IOException {
+                throw new IOException("Can't read on empty package");
+            }
+            @Override
+            public int onWriteBytes(OutputStream stream) throws IOException {
+                throw new IOException("Can't write on empty package");
+            }
+            @Override
+            public String toString() {
+                return getName();
+            }
+        };
+        packageBlock.setParent(tableBlock);
+        return packageBlock;
+    }
 
-    public static final String JSON_FILE_NAME = "package.json";
-    public static final String DIRECTORY_NAME_PREFIX = "package_";
-    public static final String RES_DIRECTORY_NAME = "res";
-    public static final String VALUES_DIRECTORY_NAME = "values";
+    public static final String NAME_package_id = ObjectsUtil.of("package_id");
+    public static final String NAME_package_name = ObjectsUtil.of("package_name");
+    private static final String NAME_specs = ObjectsUtil.of("specs");
+    public static final String NAME_libraries = ObjectsUtil.of("libraries");
+    public static final String NAME_staged_aliases = ObjectsUtil.of("staged_aliases");
+    public static final String NAME_overlaybles = ObjectsUtil.of("overlaybles");
 
-    public static final String PUBLIC_XML = "public.xml";
+    public static final String JSON_FILE_NAME = ObjectsUtil.of("package.json");
+    public static final String DIRECTORY_NAME_PREFIX = ObjectsUtil.of("package_");
+    public static final String RES_DIRECTORY_NAME = ObjectsUtil.of("res");
+    public static final String VALUES_DIRECTORY_NAME = ObjectsUtil.of("values");
 
-    public static final String TAG_public = "public";
-    public static final String TAG_resources = "resources";
-    public static final String ATTR_package = "package";
-    public static final String ATTR_id = "id";
-    public static final String ATTR_type = "type";
-    public static final String ATTR_name = "name";
+    public static final String PUBLIC_XML = ObjectsUtil.of("public.xml");
+
+    public static final String TAG_public = ObjectsUtil.of("public");
+    public static final String TAG_resources = ObjectsUtil.of("resources");
+    public static final String ATTR_package = ObjectsUtil.of("package");
+    public static final String ATTR_id = ObjectsUtil.of("id");
+    public static final String ATTR_type = ObjectsUtil.of("type");
+    public static final String ATTR_name = ObjectsUtil.of("name");
+
+    public static final String EMPTY_PACKAGE_NAME = ObjectsUtil.of("empty-package");
 
 }

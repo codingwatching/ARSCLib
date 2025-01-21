@@ -16,20 +16,24 @@
 package com.reandroid.xml;
 
 import com.reandroid.utils.collection.*;
+import com.reandroid.xml.base.NodeTree;
 import org.xmlpull.v1.XmlSerializer;
 
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Iterator;
-import java.util.List;
 import java.util.function.Predicate;
 
-public abstract class XMLNodeTree extends XMLNode implements Iterable<XMLNode>, SizedSupplier<XMLNode> {
-    private ArrayList<XMLNode> mChildes;
+public abstract class XMLNodeTree extends XMLNode implements
+        NodeTree<XMLNode>, Iterable<XMLNode>, SizedSupplier<XMLNode> {
+
+    private ArrayCollection<XMLNode> mNodeList;
+
     private int lastTrimSize;
+
     public XMLNodeTree(){
         super();
-        this.mChildes = EMPTY;
+        this.mNodeList = EMPTY;
     }
 
     public XMLNode getLast(){
@@ -37,26 +41,18 @@ public abstract class XMLNodeTree extends XMLNode implements Iterable<XMLNode>, 
         if(size == 0){
             return null;
         }
-        return mChildes.get(size - 1);
+        return mNodeList.get(size - 1);
     }
+    @Override
     public void clear(){
         if(size() == 0){
             return;
         }
         synchronized (this){
-            mChildes.clear();
-            mChildes.trimToSize();
+            mNodeList.clear();
+            mNodeList.trimToSize();
             lastTrimSize = 0;
         }
-    }
-    public<T1 extends XMLNode> int size(Class<T1> instance){
-        return CollectionUtil.count(iterator(instance));
-    }
-    public <T1 extends XMLNode> Iterator<T1> iterator(Class<T1> instance) {
-        return iterator(instance, null);
-    }
-    public <T1 extends XMLNode> Iterator<T1> iterator(Class<T1> instance, Predicate<T1> filter) {
-        return new ComputeIterator<>(iterator(), new InstanceFunction<>(instance), filter);
     }
     public Iterator<XMLNode> iterator(Predicate<? super XMLNode> filter){
         return new IndexIterator<>(this, filter);
@@ -65,13 +61,18 @@ public abstract class XMLNodeTree extends XMLNode implements Iterable<XMLNode>, 
     public Iterator<XMLNode> iterator(){
         return new IndexIterator<>(this);
     }
-    @Override
-    public int size(){
-        return mChildes.size();
+    public Iterator<XMLNode> recursiveNodes(){
+        return RecursiveIterator.of(this, XMLNode::iterator);
     }
     @Override
-    public XMLNode get(int index){
-        return mChildes.get(index);
+    public int size(){
+        return mNodeList.size();
+    }
+    @Override
+    public XMLNode get(int index) {
+        synchronized (this) {
+            return mNodeList.get(index);
+        }
     }
     public void addAll(Iterable<? extends XMLNode> iterable){
         Iterator<? extends XMLNode> itr = iterable.iterator();
@@ -79,29 +80,83 @@ public abstract class XMLNodeTree extends XMLNode implements Iterable<XMLNode>, 
             add(itr.next());
         }
     }
-    public void add(XMLNode xmlNode) {
+    public boolean add(XMLNode xmlNode) {
+        if(xmlNode == null || xmlNode == this){
+            return false;
+        }
+        synchronized (this){
+            if(mNodeList == EMPTY){
+                mNodeList = new ArrayCollection<>();
+            }
+            if (mNodeList.containsExact(xmlNode)) {
+                throw new IllegalArgumentException("Duplicate node: " + xmlNode);
+            }
+            boolean added = mNodeList.add(xmlNode);
+            xmlNode.setParentNode(this);
+            if(mNodeList.size() - lastTrimSize > TRIM_INTERVAL){
+                mNodeList.trimToSize();
+                lastTrimSize = mNodeList.size();
+            }
+            return added;
+        }
+    }
+    public void add(int i, XMLNode xmlNode) {
         if(xmlNode == null || xmlNode == this){
             return;
         }
         synchronized (this){
-            if(mChildes == EMPTY){
-                mChildes = new ArrayList<>();
+            if(mNodeList == EMPTY){
+                mNodeList = new ArrayCollection<>();
             }
-            mChildes.add(xmlNode);
-            xmlNode.setParent(this);
-            if(mChildes.size() - lastTrimSize > TRIM_INTERVAL){
-                mChildes.trimToSize();
-                lastTrimSize = mChildes.size();
+            if (mNodeList.containsExact(xmlNode)) {
+                throw new IllegalArgumentException("Duplicate node: " + xmlNode);
+            }
+            mNodeList.add(i, xmlNode);
+            xmlNode.setParentNode(this);
+            if(mNodeList.size() - lastTrimSize > TRIM_INTERVAL){
+                mNodeList.trimToSize();
+                lastTrimSize = mNodeList.size();
             }
         }
     }
+    public int indexOf(XMLNode node){
+        return mNodeList.indexOf(node);
+    }
     public boolean remove(XMLNode xmlNode){
         synchronized (this){
-            if(xmlNode != null && mChildes.remove(xmlNode)){
-                xmlNode.setParent(null);
+            if(xmlNode != null && mNodeList.remove(xmlNode)){
+                xmlNode.setParentNode(null);
                 return true;
             }
             return false;
+        }
+    }
+    public XMLNode remove(int i){
+        synchronized (this){
+            XMLNode xmlNode = mNodeList.remove(i);
+            if(xmlNode != null){
+                xmlNode.setParentNode(null);
+            }
+            return xmlNode;
+        }
+    }
+    /**
+     * Use removeIf
+     * */
+    @Deprecated
+    public boolean remove(Predicate<? super XMLNode> filter) {
+        throw new RuntimeException("Depreciated method");
+    }
+    @Override
+    public boolean removeIf(Predicate<? super XMLNode> filter) {
+        synchronized (this){
+            return mNodeList.removeIf(filter);
+        }
+    }
+    @Override
+    public boolean sort(Comparator<? super XMLNode> comparator) {
+        synchronized (this){
+            return mNodeList.sortItems(comparator);
         }
     }
     @Override
@@ -119,19 +174,22 @@ public abstract class XMLNodeTree extends XMLNode implements Iterable<XMLNode>, 
     }
     abstract void endSerialize(XmlSerializer serializer) throws IOException;
 
-    XMLElement newElement(){
-        return new XMLElement();
+    public abstract XMLElement newElement();
+    public abstract XMLText newText();
+    public XMLText newText(String text) {
+        XMLText xmlText = newText();
+        xmlText.setText(text);
+        return xmlText;
     }
-    XMLText newText(){
-        return new XMLText();
+    public XMLComment newComment(){
+        XMLComment comment = new XMLComment();
+        add(comment);
+        return comment;
     }
-    XMLComment newComment(){
-        return new XMLComment();
-    }
-    XMLAttribute newAttribute(){
-        return new XMLAttribute();
+    public XMLNamespace newNamespace(String uri, String prefix) {
+        return new XMLNamespace(uri, prefix);
     }
 
     private static final int TRIM_INTERVAL = 1000;
-    private static final ArrayList<XMLNode> EMPTY = new ArrayList<>(1);
+    private static final ArrayCollection<XMLNode> EMPTY = ArrayCollection.empty();
 }

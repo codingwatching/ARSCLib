@@ -15,15 +15,17 @@
   */
 package com.reandroid.xml;
 
+import com.reandroid.xml.base.Text;
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
 import org.xmlpull.v1.XmlSerializer;
 
 import java.io.IOException;
-import java.io.Writer;
 
-public class XMLText extends XMLNode{
+public class XMLText extends XMLNode implements Text {
+
     private String text;
+
     public XMLText(String text){
         this.text = text;
     }
@@ -32,17 +34,8 @@ public class XMLText extends XMLNode{
     }
 
     @Override
-    XMLNode clone(XMLNode parent) {
-        XMLText xmlText;
-        if(parent instanceof XMLNodeTree){
-            XMLNodeTree nodeTree =  (XMLNodeTree) parent;
-            xmlText = nodeTree.newText();
-            xmlText.setText(this.text);
-            nodeTree.add(xmlText);
-        }else {
-            xmlText = new XMLText(this.text);
-        }
-        return xmlText;
+    public XMLElement getParentNode() {
+        return (XMLElement) super.getParentNode();
     }
 
     public String getText(){

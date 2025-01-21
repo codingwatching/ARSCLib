@@ -21,4 +21,7 @@ public interface ResXmlNamespace extends Namespace {
     void setUri(String uri);
     void setPrefix(String uri);
     int getUriReference();
+    int getLineNumber();
+    void setLineNumber(int lineNumber);
+    boolean isUnused();
 }

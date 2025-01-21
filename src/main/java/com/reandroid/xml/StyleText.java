@@ -15,22 +15,23 @@
  */
 package com.reandroid.xml;
 
-import org.xmlpull.v1.XmlSerializer;
-
 import java.io.IOException;
 
-public class StyleText extends XMLText implements StyleNode{
-    public StyleText(String text){
-        super(text);
-    }
+public class StyleText extends XMLText implements StyleNode {
+
     public StyleText(){
-        this("");
+        super("");
     }
+
     void writeStyledText(Appendable appendable) throws IOException {
         appendable.append(getText(false));
     }
     @Override
     public int getLength(){
+        return getTextLength();
+    }
+    @Override
+    public int getTextLength(){
         String text = getText();
         if(text != null){
             return text.length();
@@ -46,12 +47,9 @@ public class StyleText extends XMLText implements StyleNode{
     }
     @Override
     public StyleNode getParentStyle() {
-        return (StyleNode) getParent();
+        return (StyleNode) getParentNode();
     }
-    @Override
-    public void addStyleNode(StyleNode styleNode){
-        throw new IllegalArgumentException("Text can't add node");
-    }
+
     @Override
     boolean isIndent(){
         return false;

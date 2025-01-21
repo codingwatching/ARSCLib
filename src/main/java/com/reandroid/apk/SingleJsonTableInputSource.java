@@ -15,21 +15,33 @@
   */
 package com.reandroid.apk;
 
+import com.reandroid.archive.BlockInputSource;
 import com.reandroid.archive.FileInputSource;
 import com.reandroid.archive.InputSource;
 import com.reandroid.arsc.chunk.TableBlock;
 import com.reandroid.json.JSONException;
 import com.reandroid.json.JSONObject;
+import com.reandroid.utils.Crc32OutputStream;
 
 import java.io.*;
 
-public class SingleJsonTableInputSource extends InputSource {
+public class SingleJsonTableInputSource extends BlockInputSource<TableBlock> {
+
     private final InputSource inputSource;
     private TableBlock mCache;
-    private APKLogger apkLogger;
+
     public SingleJsonTableInputSource(InputSource inputSource) {
-        super(TableBlock.FILE_NAME);
+        super(TableBlock.FILE_NAME, null);
         this.inputSource = inputSource;
+    }
+
+    @Override
+    public TableBlock getBlock() {
+        try {
+            return getTableBlock();
+        } catch (IOException exception) {
+            throw new RuntimeException(exception);
+        }
     }
     @Override
     public long write(OutputStream outputStream) throws IOException {
@@ -47,22 +59,18 @@ public class SingleJsonTableInputSource extends InputSource {
     }
     @Override
     public long getCrc() throws IOException {
-        CrcOutputStream outputStream=new CrcOutputStream();
+        Crc32OutputStream outputStream = new Crc32OutputStream();
         this.write(outputStream);
-        return outputStream.getCrcValue();
+        return outputStream.getValue();
     }
     public TableBlock getTableBlock() throws IOException{
         if(mCache != null){
             return mCache;
         }
-        logMessage("Building resources table: " + inputSource.getAlias());
-        TableBlock tableBlock=newInstance();
+        TableBlock tableBlock = new TableBlock();
         InputStream inputStream = inputSource.openStream();
         try{
-            JsonStringPoolBuilder poolBuilder = new JsonStringPoolBuilder();
             JSONObject jsonObject = new JSONObject(inputStream);
-            poolBuilder.build(jsonObject);
-            poolBuilder.apply(tableBlock);
             tableBlock.fromJson(jsonObject);
         }catch (JSONException ex){
             throw new IOException(inputSource.getAlias(), ex);
@@ -70,30 +78,9 @@ public class SingleJsonTableInputSource extends InputSource {
         mCache = tableBlock;
         return tableBlock;
     }
-    TableBlock newInstance(){
-        return new TableBlock();
-    }
     public static SingleJsonTableInputSource fromFile(File rootDir, File jsonFile){
         String path = ApkUtil.jsonToArchiveResourcePath(rootDir, jsonFile);
         FileInputSource fileInputSource = new FileInputSource(jsonFile, path);
         return new SingleJsonTableInputSource(fileInputSource);
-    }
-    void setApkLogger(APKLogger logger) {
-        this.apkLogger = logger;
-    }
-    private void logMessage(String msg) {
-        if(apkLogger!=null){
-            apkLogger.logMessage(msg);
-        }
-    }
-    private void logError(String msg, Throwable tr) {
-        if(apkLogger!=null){
-            apkLogger.logError(msg, tr);
-        }
-    }
-    private void logVerbose(String msg) {
-        if(apkLogger!=null){
-            apkLogger.logVerbose(msg);
-        }
     }
 }

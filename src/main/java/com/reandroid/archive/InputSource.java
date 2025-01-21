@@ -17,13 +17,16 @@ package com.reandroid.archive;
 
 import com.reandroid.arsc.chunk.TableBlock;
 import com.reandroid.arsc.chunk.xml.AndroidManifestBlock;
+import com.reandroid.utils.Crc32OutputStream;
+import com.reandroid.utils.CompareUtil;
 import com.reandroid.utils.StringsUtil;
+import com.reandroid.utils.io.FileUtil;
 
 import java.io.*;
 import java.util.Comparator;
-import java.util.zip.CRC32;
 
 public abstract class InputSource {
+
     private final String name;
     private String alias;
     private long mCrc;
@@ -31,10 +34,12 @@ public abstract class InputSource {
     private int method = Archive.DEFLATED;
     private int sort = -1;
     private String[] splitAlias;
+
     public InputSource(String name){
         this.name = name;
         this.alias = ArchiveUtil.sanitizePath(name);
     }
+
     public byte[] getBytes(int length) throws IOException{
         InputStream inputStream = openStream();
         byte[] bytes = new byte[length];
@@ -50,8 +55,15 @@ public abstract class InputSource {
     public void setSort(int sort) {
         this.sort = sort;
     }
+    public void copyAttributes(InputSource other) {
+        if(other != null && other != this) {
+            this.setSort(other.getSort());
+            this.setMethod(other.getMethod());
+            this.setAlias(other.getAlias());
+        }
+    }
     public boolean isUncompressed(){
-        return getMethod() == Archive.STORED;
+        return getMethod() != Archive.DEFLATED;
     }
     public void setUncompressed(boolean uncompressed){
         if(uncompressed){
@@ -76,6 +88,18 @@ public abstract class InputSource {
     public void setAlias(String alias) {
         this.alias = alias;
         this.splitAlias = null;
+    }
+    public String getSimpleName() {
+        return FileUtil.getFileName(getAlias());
+    }
+    public String getSimpleNameWoExtension() {
+        return FileUtil.getNameWoExtension(getAlias());
+    }
+    public String getParentPath() {
+        return FileUtil.getParent(getAlias());
+    }
+    public String getExtension() {
+        return FileUtil.getExtension(getAlias());
     }
     private String[] getSplitAlias(){
         if(this.splitAlias == null){
@@ -151,21 +175,13 @@ public abstract class InputSource {
         return getClass().getSimpleName()+": "+getName();
     }
     private void calculateCrc() throws IOException {
-        InputStream inputStream=openStream();
-        long length=0;
-        CRC32 crc = new CRC32();
-        int bytesRead;
-        byte[] buffer = new byte[1024*64];
-        while((bytesRead = inputStream.read(buffer)) != -1) {
-            crc.update(buffer, 0, bytesRead);
-            length+=bytesRead;
-        }
-        close(inputStream);
-        mCrc=crc.getValue();
-        mLength=length;
+        Crc32OutputStream outputStream = new Crc32OutputStream();
+        write(outputStream);
+        this.mCrc = outputStream.getValue();
+        this.mLength = outputStream.getLength();
     }
 
-    public static int getDexNumber(String name){
+    public static int getDexNumber(String name) {
         if(name.equals("classes.dex")){
             return 0;
         }
@@ -181,7 +197,7 @@ public abstract class InputSource {
             return -1;
         }
     }
-    private static int compareDex(String dex1, String dex2){
+    public static int compareDex(String dex1, String dex2){
         int d1 = getDexNumber(dex1);
         int d2 = getDexNumber(dex2);
         if(d1 == d2){
@@ -236,7 +252,7 @@ public abstract class InputSource {
         int order1 = getSortOrder(alias1);
         int order2 = getSortOrder(alias2);
         if(order1 != order2){
-            return Integer.compare(order1, order2);
+            return CompareUtil.compare(order1, order2);
         }
         if(order1 == ORDER_classes){
             return compareDex(alias1[0], alias2[0]);

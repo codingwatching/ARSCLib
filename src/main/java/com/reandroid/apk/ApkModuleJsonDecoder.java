@@ -93,16 +93,16 @@ public class ApkModuleJsonDecoder extends ApkModuleDecoder{
     }
     void decodeAndroidManifest(File mainDirectory) throws IOException {
         ApkModule apkModule = getApkModule();
-        if(!apkModule.hasAndroidManifestBlock()){
+        if(!apkModule.hasAndroidManifest()){
             return;
         }
-        AndroidManifestBlock manifestBlock = apkModule.getAndroidManifestBlock();
+        AndroidManifestBlock manifest = apkModule.getAndroidManifest();
         File file = new File(mainDirectory, AndroidManifestBlock.FILE_NAME_JSON);
-        manifestBlock.toJson().write(file);
+        manifest.toJson().write(file);
         addDecodedPath(AndroidManifestBlock.FILE_NAME);
     }
     private File toResJson(File mainDirectory, String path){
-        File file = new File(mainDirectory, ApkUtil.RES_JSON_NAME);
+        File file = new File(mainDirectory, TableBlock.RES_JSON_DIRECTORY_NAME);
         path = path + ApkUtil.JSON_FILE_EXTENSION;
         path = path.replace('/', File.separatorChar);
         return new File(file, path);

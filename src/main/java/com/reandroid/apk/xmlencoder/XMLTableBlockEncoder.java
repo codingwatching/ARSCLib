@@ -18,14 +18,19 @@ package com.reandroid.apk.xmlencoder;
 import com.reandroid.apk.*;
 import com.reandroid.archive.BlockInputSource;
 import com.reandroid.archive.ZipEntryMap;
+import com.reandroid.arsc.chunk.Overlayable;
 import com.reandroid.arsc.chunk.PackageBlock;
 import com.reandroid.arsc.chunk.TableBlock;
 import com.reandroid.arsc.chunk.xml.AndroidManifestBlock;
 import com.reandroid.arsc.coder.ReferenceString;
 import com.reandroid.arsc.coder.xml.XmlCoder;
+import com.reandroid.arsc.list.OverlayableList;
+import com.reandroid.arsc.pool.TableStringPool;
 import com.reandroid.utils.HexUtil;
+import com.reandroid.utils.io.FileUtil;
 import com.reandroid.utils.io.IOUtil;
 import com.reandroid.json.JSONObject;
+import com.reandroid.xml.StyleDocument;
 import com.reandroid.xml.XMLDocument;
 import com.reandroid.xml.XMLElement;
 import com.reandroid.xml.XMLFactory;
@@ -41,6 +46,7 @@ public class XMLTableBlockEncoder {
     private APKLogger apkLogger;
     private final TableBlock tableBlock;
     private final Set<File> parsedFiles = new HashSet<>();
+    private final Set<File> nonTypeValueFiles = new HashSet<>();
     private final ApkModule apkModule;
     private Integer mMainPackageId;
 
@@ -79,8 +85,15 @@ public class XMLTableBlockEncoder {
     public void scanResourcesDirectory(File resourcesDirectory) throws IOException {
         try {
             scanResourceFiles(resourcesDirectory);
+            ensureEmptyTable();
         } catch (XmlPullParserException ex) {
             throw new IOException(ex);
+        }
+    }
+    private void ensureEmptyTable() {
+        TableBlock tableBlock = this.getTableBlock();
+        if(tableBlock.initializeAsEmpty()) {
+            logMessage("Using <NULL> resource table");
         }
     }
     private void scanResourceFiles(File resourcesDirectory) throws IOException, XmlPullParserException {
@@ -90,16 +103,15 @@ public class XMLTableBlockEncoder {
                     + PackageBlock.PUBLIC_XML
                     + "  file found in '" +resourcesDirectory + "'");
         }
-        //preloadStringPool(pubXmlFileList);
-
         loadPublicXmlFiles(pubXmlFileList);
 
-        excludeIds(pubXmlFileList);
         initializeFrameworkFromManifest(pubXmlFileList);
 
         encodeAttrs(pubXmlFileList);
 
         encodeValues(pubXmlFileList);
+
+        encodeNonTypeValues(pubXmlFileList);
 
         tableBlock.refresh();
 
@@ -194,22 +206,12 @@ public class XMLTableBlockEncoder {
                 continue;
             }
             for(File file : attrFiles){
-                logVerbose("Encoding: " + IOUtil.shortPath(file, 4));
+                logVerbose("Encoding: " + FileUtil.shortPath(file, 4));
                 XmlCoder xmlCoder = XmlCoder.getInstance();
                 xmlCoder.VALUES_XML.encode(file, packageBlock);
                 addParsedFiles(file);
             }
             packageBlock.sortTypes();
-        }
-    }
-    private void excludeIds(List<File> pubXmlFileList){
-        for(File pubXmlFile : pubXmlFileList){
-            addParsedFiles(pubXmlFile);
-            File valuesDir = pubXmlFile.getParentFile();
-            File file = new File(valuesDir, "ids.xml");
-            if(file.isFile()){
-                addParsedFiles(file);
-            }
         }
     }
     private void initializeFrameworkFromManifest(File manifestFile) throws IOException {
@@ -232,7 +234,7 @@ public class XMLTableBlockEncoder {
     }
     private void initializeFrameworkFromBinaryManifest() throws IOException {
         ApkModule apkModule = getApkModule();
-        if(!apkModule.hasTableBlock() || !apkModule.hasAndroidManifestBlock()){
+        if(!apkModule.hasTableBlock() || !apkModule.hasAndroidManifest()){
             return;
         }
         logMessage("Initialize framework from binary manifest ...");
@@ -272,9 +274,32 @@ public class XMLTableBlockEncoder {
                 + HexUtil.toHex2((byte)packageId) + ", from: " + ref );
     }
     private void encodeResDir(File resDir) throws IOException, XmlPullParserException {
+        preloadStyledStrings(resDir);
         List<File> valuesDirList = ApkUtil.listValuesDirectory(resDir);
         for(File valuesDir : valuesDirList){
             encodeValuesDir(valuesDir);
+        }
+    }
+    private void preloadStyledStrings(File resDir) throws IOException, XmlPullParserException {
+        logVerbose("Preloading styled strings ...");
+        List<File> valuesDirList = ApkUtil.listValuesDirectory(resDir);
+        for(File valuesDir : valuesDirList){
+            List<File> xmlFiles = ApkUtil.listFiles(valuesDir, "strings.xml");
+            for(File file : xmlFiles){
+                preloadStyledStringsXml(file);
+            }
+        }
+    }
+    private void preloadStyledStringsXml(File file) throws IOException, XmlPullParserException {
+        XMLDocument document = XMLDocument.load(file);
+        XMLElement root = document.getDocumentElement();
+        Iterator<? extends XMLElement> iterator = root.getElements();
+        TableStringPool stringPool = getTableBlock().getStringPool();
+        while (iterator.hasNext()) {
+            XMLElement element = iterator.next();
+            if(element.hasChildElements()) {
+                stringPool.getOrCreate(StyleDocument.copyInner(element));
+            }
         }
     }
     private void encodeValuesDir(File valuesDir) throws IOException, XmlPullParserException {
@@ -284,11 +309,64 @@ public class XMLTableBlockEncoder {
             if(isAlreadyParsed(file)){
                 continue;
             }
+            if(addNonTypeValueFile(file)){
+                continue;
+            }
             addParsedFiles(file);
-            logVerbose("Encoding: " + IOUtil.shortPath(file, 4));
+            logVerbose("Encoding: " + FileUtil.shortPath(file, 4));
             XmlCoder xmlCoder = XmlCoder.getInstance();
             xmlCoder.VALUES_XML.encode(file, getTableBlock().getCurrentPackage());
         }
+    }
+
+    private void encodeNonTypeValues(List<File> pubXmlFileList) throws IOException, XmlPullParserException {
+        Set<File> nonTypeValueFiles = this.nonTypeValueFiles;
+        if (nonTypeValueFiles.isEmpty()) {
+            return;
+        }
+        TableBlock tableBlock = getTableBlock();
+
+        for(File pubXmlFile:pubXmlFileList){
+            addParsedFiles(pubXmlFile);
+            PackageBlock packageBlock = tableBlock.getPackageBlockByTag(pubXmlFile);
+            tableBlock.setCurrentPackage(packageBlock);
+            File valuesDir = pubXmlFile.getParentFile();
+            for (File file : nonTypeValueFiles) {
+                File dir = file.getParentFile().getParentFile();
+                dir = new File(dir, PackageBlock.VALUES_DIRECTORY_NAME);
+                if (valuesDir.equals(dir)) {
+                    encodeNonTypeValue(file);
+                }
+            }
+        }
+    }
+    private void encodeNonTypeValue(File file) throws IOException, XmlPullParserException {
+        if (isAlreadyParsed(file)) {
+            return;
+        }
+        addParsedFiles(file);
+        if (Overlayable.FILE_NAME_XML.equals(file.getName())) {
+            encodeOverlayable(file);
+        }
+    }
+    private void encodeOverlayable(File file) throws IOException, XmlPullParserException {
+        logMessage("Encode: " + FileUtil.shortPath(file, 4));
+        TableBlock tableBlock = getTableBlock();
+        PackageBlock packageBlock = tableBlock.getCurrentPackage();
+        OverlayableList overlayableList = packageBlock.getOverlayableList();
+        XmlPullParser parser = XMLFactory.newPullParser(file);
+        XMLFactory.setOrigin(parser, FileUtil.shortPath(file, 4));
+        overlayableList.parse(parser);
+    }
+    private boolean addNonTypeValueFile(File file) {
+        if (nonTypeValueFiles.contains(file)) {
+            return true;
+        }
+        if (Overlayable.FILE_NAME_XML.equals(file.getName())) {
+            nonTypeValueFiles.add(file);
+            return true;
+        }
+        return false;
     }
     private File toAndroidManifest(File pubXmlFile){
         File resDirectory = toResDirectory(pubXmlFile);

@@ -17,12 +17,18 @@ package com.reandroid.archive.block;
 
 import com.reandroid.arsc.container.ExpandableBlockContainer;
 
-public class SignatureScheme extends ExpandableBlockContainer {
+import java.util.Iterator;
+
+public abstract class SignatureScheme extends ExpandableBlockContainer {
+
     private final SignatureId signatureId;
+
     public SignatureScheme(int childesCount, SignatureId signatureId){
         super(childesCount);
         this.signatureId = signatureId;
     }
+
+    public abstract Iterator<CertificateBlock> getCertificates();
     public SignatureId getSignatureId() {
         return signatureId;
     }

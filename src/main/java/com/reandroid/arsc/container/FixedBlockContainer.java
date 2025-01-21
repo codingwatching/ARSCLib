@@ -1,4 +1,4 @@
- /*
+/*
   *  Copyright (C) 2022 github.com/REAndroid
   *
   *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,25 +19,37 @@ import com.reandroid.arsc.base.Block;
 import com.reandroid.arsc.base.BlockContainer;
 
 public class FixedBlockContainer extends BlockContainer<Block> {
+
     private final Block[] mChildes;
+    
     public FixedBlockContainer(int childesCount){
         super();
-        mChildes=new Block[childesCount];
+        Block[] childes;
+        if(childesCount == 0){
+            childes = EMPTY;
+        }else {
+            childes = new Block[childesCount];
+        }
+        this.mChildes = childes;
     }
     public void addChild(int index, Block block){
-        mChildes[index]=block;
-        block.setIndex(index);
-        block.setParent(this);
+        mChildes[index] = block;
+        if(block != null){
+            block.setIndex(index);
+            block.setParent(this);
+        }
     }
     @Override
     protected void onRefreshed(){
     }
     @Override
-    public int childesCount() {
+    public int getChildesCount() {
         return mChildes.length;
     }
     @Override
     public Block[] getChildes() {
         return mChildes;
     }
+
+    private static final Block[] EMPTY = new Block[0];
 }

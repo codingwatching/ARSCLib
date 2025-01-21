@@ -15,6 +15,7 @@
  */
 package com.reandroid.xml;
 
+import com.reandroid.utils.collection.InstanceIterator;
 import com.reandroid.utils.io.IOUtil;
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
@@ -22,10 +23,10 @@ import org.xmlpull.v1.XmlPullParserException;
 import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
-import java.util.Comparator;
 import java.util.Iterator;
 
-public class StyleDocument extends XMLDocument implements StyleNode, Comparable<StyleDocument>{
+public class StyleDocument extends XMLDocument implements
+        SpanSet<StyleElement>, StyleNode, Comparable<StyleDocument>{
     public StyleDocument(){
         super();
     }
@@ -34,6 +35,15 @@ public class StyleDocument extends XMLDocument implements StyleNode, Comparable<
     }
     public Iterator<StyleElement> getElements(){
         return iterator(StyleElement.class);
+    }
+
+    @Override
+    public Iterator<StyleElement> getSpans() {
+        return InstanceIterator.of(recursiveNodes(), StyleElement.class);
+    }
+    // keep
+    public Iterator<StyleText> getStyleTexts() {
+        return InstanceIterator.of(recursiveNodes(), StyleText.class);
     }
 
     @Override
@@ -46,18 +56,13 @@ public class StyleDocument extends XMLDocument implements StyleNode, Comparable<
         if(xmlNode instanceof StyleText){
             styleText = (StyleText) xmlNode;
         }else {
-            styleText = new StyleText();
-            add(styleText);
+            styleText = newText();
         }
         styleText.appendChar(ch);
     }
     @Override
     public StyleNode getParentStyle() {
         return null;
-    }
-    @Override
-    public void addStyleNode(StyleNode styleNode){
-        add((XMLNode) styleNode);
     }
 
     public String getXml(){
@@ -135,20 +140,25 @@ public class StyleDocument extends XMLDocument implements StyleNode, Comparable<
     }
 
     @Override
-    StyleElement newElement(){
-        return new StyleElement();
+    public StyleElement newElement(){
+        StyleElement element = new StyleElement();
+        add(element);
+        return element;
     }
     @Override
-    StyleText newText(){
-        return new StyleText();
+    public StyleText newText(){
+        StyleText styleText = new StyleText();
+        add(styleText);
+        return styleText;
     }
     @Override
-    XMLComment newComment(){
-        return null;
+    public StyleText newText(String text) {
+        return (StyleText) super.newText(text);
     }
     @Override
-    StyleAttribute newAttribute(){
-        return new StyleAttribute();
+    public XMLComment newComment() {
+        throw new IllegalArgumentException("Can not create comment at style document: "
+                + getClass());
     }
 
     public static StyleDocument parseNext(XmlPullParser parser) throws IOException, XmlPullParserException {
@@ -161,14 +171,11 @@ public class StyleDocument extends XMLDocument implements StyleNode, Comparable<
         Iterator<XMLNode> iterator = xmlElement.iterator();
         while (iterator.hasNext()){
             XMLNode xmlNode = iterator.next();
-            if(xmlNode instanceof XMLElement){
-                StyleElement styleElement = new StyleElement();
-                styleDocument.add(styleElement);
-                styleElement.copyFrom((XMLElement) xmlNode);
-            }else if(xmlNode instanceof XMLText){
+            if (xmlNode instanceof XMLElement) {
+                styleDocument.newElement().copyFrom((XMLElement) xmlNode);
+            } else if(xmlNode instanceof XMLText) {
                 XMLText xmlText = (XMLText)xmlNode;
-                StyleText styleText = new StyleText(xmlText.getText());
-                styleDocument.add(styleText);
+                styleDocument.newText(xmlText.getText());
             }
         }
         return styleDocument;
@@ -180,14 +187,5 @@ public class StyleDocument extends XMLDocument implements StyleNode, Comparable<
         return styleDocument;
     }
 
-    public static final Comparator<StyleDocument> COMPARATOR = (document1, document2) -> {
-        if(document1 == null && document2 == null){
-            return 0;
-        }
-        if(document1 == null){
-            return 1;
-        }
-        return document1.compareTo(document2);
-    };
     private static final XmlPullParser PARSER = XMLFactory.newPullParser();
 }

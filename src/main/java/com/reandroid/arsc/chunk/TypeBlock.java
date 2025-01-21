@@ -15,47 +15,63 @@
  */
 package com.reandroid.arsc.chunk;
 
-import com.reandroid.arsc.array.EntryArray;
-import com.reandroid.arsc.array.OffsetArray;
-import com.reandroid.arsc.array.SparseOffsetsArray;
+import com.reandroid.arsc.array.*;
+import com.reandroid.arsc.base.Block;
 import com.reandroid.arsc.container.SpecTypePair;
 import com.reandroid.arsc.header.TypeHeader;
-import com.reandroid.arsc.item.*;
+import com.reandroid.arsc.item.IntegerItem;
+import com.reandroid.arsc.item.SpecString;
+import com.reandroid.arsc.item.TypeString;
 import com.reandroid.arsc.pool.SpecStringPool;
 import com.reandroid.arsc.pool.TableStringPool;
 import com.reandroid.arsc.pool.TypeStringPool;
-import com.reandroid.utils.HexUtil;
 import com.reandroid.arsc.value.Entry;
 import com.reandroid.arsc.value.ResConfig;
+import com.reandroid.arsc.value.ValueItem;
 import com.reandroid.json.JSONConvert;
 import com.reandroid.json.JSONObject;
+import com.reandroid.utils.HexUtil;
+import com.reandroid.utils.ObjectsUtil;
+import com.reandroid.utils.collection.CollectionUtil;
+import com.reandroid.utils.collection.IterableIterator;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
 public class TypeBlock extends Chunk<TypeHeader>
-        implements JSONConvert<JSONObject>, Comparable<TypeBlock> {
+        implements Iterable<Entry>, JSONConvert<JSONObject>, Comparable<TypeBlock> {
 
     private final EntryArray mEntryArray;
     private TypeString mTypeString;
-    public TypeBlock(boolean sparse) {
-        super(new TypeHeader(sparse), 2);
+
+    public TypeBlock(boolean sparse, boolean offset16) {
+        super(new TypeHeader(sparse, offset16), 2);
         TypeHeader header = getHeaderBlock();
 
         OffsetArray entryOffsets;
         if(sparse){
             entryOffsets = new SparseOffsetsArray();
+        }else if(offset16){
+            entryOffsets = new ShortOffsetArray();
         }else {
-            entryOffsets = new OffsetArray();
+            entryOffsets = new IntegerOffsetArray();
         }
         this.mEntryArray = new EntryArray(entryOffsets,
-                header.getCount(), header.getEntriesStart());
+                header.getCountItem(), header.getEntriesStart());
 
-        addChild(entryOffsets);
+        addChild((Block) entryOffsets);
         addChild(mEntryArray);
+    }
+
+    public Iterator<ValueItem> allValues(){
+        return new IterableIterator<Entry, ValueItem>(iterator()) {
+            @Override
+            public Iterator<ValueItem> iterator(Entry element) {
+                return element.allValues();
+            }
+        };
     }
     public boolean isTypeAttr(){
         TypeString typeString = getTypeString();
@@ -90,6 +106,9 @@ public class TypeBlock extends Chunk<TypeHeader>
     public boolean isSparse(){
         return getHeaderBlock().isSparse();
     }
+    public boolean isOffset16(){
+        return getHeaderBlock().isOffset16();
+    }
     public void destroy(){
         getEntryArray().destroy();
         setId(0);
@@ -99,7 +118,7 @@ public class TypeBlock extends Chunk<TypeHeader>
         startId = 0x0000ffff & startId;
         EntryArray entryArray = getEntryArray();
         entryArray.removeAllNull(startId);
-        return entryArray.childesCount() == startId;
+        return entryArray.size() == startId;
     }
     public PackageBlock getPackageBlock(){
         SpecTypePair specTypePair = getParent(SpecTypePair.class);
@@ -131,10 +150,10 @@ public class TypeBlock extends Chunk<TypeHeader>
         return mTypeString;
     }
     public byte getTypeId(){
-        return getHeaderBlock().getId().get();
+        return getHeaderBlock().getId().getByte();
     }
     public int getId(){
-        return getHeaderBlock().getId().unsignedInt();
+        return getHeaderBlock().getId().get();
     }
     public void setId(int id){
         setTypeId((byte) (0xff & id));
@@ -143,7 +162,7 @@ public class TypeBlock extends Chunk<TypeHeader>
         getHeaderBlock().getId().set(id);
     }
     public void setTypeName(String name){
-        TypeStringPool typeStringPool=getTypeStringPool();
+        TypeStringPool typeStringPool = getTypeStringPool();
         int id= getId();
         TypeString typeString=typeStringPool.getById(id);
         if(typeString==null){
@@ -152,14 +171,14 @@ public class TypeBlock extends Chunk<TypeHeader>
         typeString.set(name);
     }
     private TypeStringPool getTypeStringPool(){
-        PackageBlock packageBlock=getPackageBlock();
-        if(packageBlock!=null){
+        PackageBlock packageBlock = getPackageBlock();
+        if(packageBlock != null){
             return packageBlock.getTypeStringPool();
         }
-        return null;
+        return ObjectsUtil.cast(null);
     }
     public void setEntryCount(int count){
-        IntegerItem entryCount = getHeaderBlock().getCount();
+        IntegerItem entryCount = getHeaderBlock().getCountItem();
         if(count == entryCount.get()){
             return;
         }
@@ -178,18 +197,8 @@ public class TypeBlock extends Chunk<TypeHeader>
     public void setQualifiers(String qualifiers){
         getResConfig().parseQualifiers(qualifiers);
     }
-    public int countNonNullEntries(){
-        return getEntryArray().countNonNull();
-    }
     public SpecTypePair getParentSpecTypePair(){
         return getParent(SpecTypePair.class);
-    }
-    public void cleanEntries(){
-        Iterator<Entry> iterator = getEntries();
-        while (iterator.hasNext()){
-            Entry entry = iterator.next();
-            entry.setNull(true);
-        }
     }
     public Entry getOrCreateDefinedEntry(String name){
         Entry entry = getEntry(name);
@@ -212,6 +221,9 @@ public class TypeBlock extends Chunk<TypeHeader>
         return entry;
     }
     public Entry getOrCreateEntry(String name){
+        if (name == null) {
+            return null;
+        }
         Entry entry = getEntry(name);
         if(entry != null){
             return entry;
@@ -239,8 +251,21 @@ public class TypeBlock extends Chunk<TypeHeader>
     public Entry getEntry(short entryId){
         return getEntryArray().getEntry(entryId);
     }
-    public Iterator<Entry> getEntries(){
+    public int realSize(){
+        return getEntryArray().countNonNull();
+    }
+    public int size() {
+        return getEntryArray().size();
+    }
+    @Override
+    public Iterator<Entry> iterator(){
         return getEntryArray().iterator(false);
+    }
+    public void clear(){
+        for (Entry entry : this) {
+            entry.setNull(true);
+        }
+        getEntryArray().clear();
     }
     /**
      * It is allowed to have duplicate entry name therefore it is not recommend to use this.
@@ -266,30 +291,24 @@ public class TypeBlock extends Chunk<TypeHeader>
         entryArray.ensureSize(count);
         entryArray.refreshCount();
     }
-    public List<Entry> listEntries(boolean skipNullBlock){
-        List<Entry> results=new ArrayList<>();
-        Iterator<Entry> itr = getEntryArray().iterator(skipNullBlock);
-        while (itr.hasNext()){
-            Entry block=itr.next();
-            results.add(block);
-        }
-        return results;
+    public List<Entry> listEntries(boolean skipNullBlock) {
+        return CollectionUtil.toList(getEntryArray().iterator(skipNullBlock));
     }
     public Entry getEntry(int entryId){
         return getEntryArray().getEntry(entryId);
     }
 
     private void onSetEntryCount(int count) {
-        getEntryArray().setChildesCount(count);
+        getEntryArray().setSize(count);
     }
     @Override
     protected void onChunkRefreshed() {
         getEntryArray().refreshCountAndStart();
     }
     @Override
-    protected void onPreRefreshRefresh(){
+    protected void onPreRefresh(){
         getHeaderBlock().getConfig().refresh();
-        super.onPreRefreshRefresh();
+        super.onPreRefresh();
     }
     /*
      * method Block.addBytes is inefficient for large size byte array
@@ -310,6 +329,9 @@ public class TypeBlock extends Chunk<TypeHeader>
         JSONObject jsonObject = new JSONObject();
         if(isSparse()){
             jsonObject.put(NAME_is_sparse, true);
+        }
+        if(isOffset16()){
+            jsonObject.put(NAME_is_offset16, true);
         }
         jsonObject.put(NAME_id, getId());
         jsonObject.put(NAME_name, getTypeName());
@@ -356,24 +378,14 @@ public class TypeBlock extends Chunk<TypeHeader>
     public boolean isEqualTypeName(String typeName){
         return isEqualTypeName(getTypeName(), typeName);
     }
-
-    /**
-     * To be removed, use getEntry(String entryName)
-     */
-    @Deprecated
-    public Entry searchByEntryName(String entryName){
-        return getEntryArray().getEntry(entryName);
-    }
     @Override
     public String toString(){
-        StringBuilder builder=new StringBuilder();
-        builder.append(getTypeName());
-        builder.append('{');
-        builder.append(getHeaderBlock());
-        builder.append('}');
-        return builder.toString();
+        return getTypeName() + '{' +  getHeaderBlock() + '}';
     }
 
+    public static boolean canHaveResourceFile(String typeName){
+        return !isEqualTypeName("string", typeName);
+    }
     public static boolean isEqualTypeName(String name1, String name2){
         if(name1 == null){
             return name2 == null;
@@ -408,4 +420,5 @@ public class TypeBlock extends Chunk<TypeHeader>
     public static final String NAME_id = "id";
     public static final String NAME_entries = "entries";
     public static final String NAME_is_sparse = "is_sparse";
+    public static final String NAME_is_offset16 = "is_offset16";
 }

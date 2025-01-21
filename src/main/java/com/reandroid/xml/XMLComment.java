@@ -15,13 +15,14 @@
  */
 package com.reandroid.xml;
 
+import com.reandroid.xml.base.Comment;
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
 import org.xmlpull.v1.XmlSerializer;
 
 import java.io.IOException;
 
-public class XMLComment extends XMLNode {
+public class XMLComment extends XMLNode implements Comment {
     private String text;
     public XMLComment(String text){
         this();
@@ -29,13 +30,6 @@ public class XMLComment extends XMLNode {
     }
     public XMLComment(){
         super();
-    }
-
-    @Override
-    XMLComment clone(XMLNode parent) {
-        XMLComment comment = new XMLComment();
-        comment.setText(getText());
-        return comment;
     }
 
     public void setText(String text){

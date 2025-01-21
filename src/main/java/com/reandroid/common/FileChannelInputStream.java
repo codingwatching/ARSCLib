@@ -15,13 +15,14 @@
  */
 package com.reandroid.common;
 
+import com.reandroid.utils.io.FileUtil;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.file.StandardOpenOption;
 
 public class FileChannelInputStream extends InputStream {
     private final FileChannel fileChannel;
@@ -34,6 +35,15 @@ public class FileChannelInputStream extends InputStream {
     private boolean mAutoClosable;
     private boolean mIsClosed;
 
+    public FileChannelInputStream(FileChannel fileChannel, byte[] buffer, long length) throws IOException {
+        this.fileChannel = fileChannel;
+        this.totalLength = length;
+        int bufferSize = buffer.length;
+        this.buffer = buffer;
+        this.bufferLength = bufferSize;
+        this.bufferPosition = bufferSize;
+        this.startOffset = fileChannel.position();
+    }
     public FileChannelInputStream(FileChannel fileChannel, long length, int bufferSize) throws IOException {
         this.fileChannel = fileChannel;
         this.totalLength = length;
@@ -52,11 +62,15 @@ public class FileChannelInputStream extends InputStream {
         this(fileChannel, length, DEFAULT_BUFFER_SIZE);
     }
     public FileChannelInputStream(File file, long length, int bufferSize) throws IOException {
-        this(FileChannel.open(file.toPath(), StandardOpenOption.READ), length, bufferSize);
+        this(FileUtil.openReadChannel(file), length, bufferSize);
+        this.mAutoClosable = true;
+    }
+    public FileChannelInputStream(File file, byte[] buffer, int bufferSize) throws IOException {
+        this(FileUtil.openReadChannel(file), buffer, bufferSize);
         this.mAutoClosable = true;
     }
     public FileChannelInputStream(File file) throws IOException {
-        this(FileChannel.open(file.toPath(), StandardOpenOption.READ), file.length());
+        this(FileUtil.openReadChannel(file), file.length());
         this.mAutoClosable = true;
     }
 
@@ -233,6 +247,11 @@ public class FileChannelInputStream extends InputStream {
         inputStream.loadBuffer();
         inputStream.closeAuto();
         return inputStream.buffer;
+    }
+    public static void read(File file, byte[] buffer, int length) throws IOException{
+        FileChannelInputStream inputStream = new FileChannelInputStream(file, buffer, length);
+        inputStream.loadBuffer();
+        inputStream.closeAuto();
     }
 
     private static final int DEFAULT_BUFFER_SIZE = 1024 * 100;

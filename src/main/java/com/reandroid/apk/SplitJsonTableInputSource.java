@@ -15,19 +15,30 @@
   */
 package com.reandroid.apk;
 
-import com.reandroid.archive.InputSource;
+import com.reandroid.archive.BlockInputSource;
 import com.reandroid.arsc.chunk.TableBlock;
+import com.reandroid.utils.Crc32OutputStream;
 
 import java.io.*;
 
-public class SplitJsonTableInputSource extends InputSource {
+public class SplitJsonTableInputSource extends BlockInputSource<TableBlock> {
     private final File resourcesDirectory;
     private TableBlock mCache;
-    private APKLogger apkLogger;
+
     public SplitJsonTableInputSource(File resourcesDirectory) {
-        super(TableBlock.FILE_NAME);
+        super(TableBlock.FILE_NAME, null);
         this.resourcesDirectory =resourcesDirectory;
     }
+
+    @Override
+    public TableBlock getBlock() {
+        try {
+            return getTableBlock();
+        } catch (IOException exception) {
+            throw new RuntimeException(exception);
+        }
+    }
+
     @Override
     public long write(OutputStream outputStream) throws IOException {
         return getTableBlock().writeBytes(outputStream);
@@ -44,9 +55,9 @@ public class SplitJsonTableInputSource extends InputSource {
     }
     @Override
     public long getCrc() throws IOException {
-        CrcOutputStream outputStream=new CrcOutputStream();
+        Crc32OutputStream outputStream = new Crc32OutputStream();
         this.write(outputStream);
-        return outputStream.getCrcValue();
+        return outputStream.getValue();
     }
     public TableBlock getTableBlock() throws IOException {
         if(mCache!=null){
@@ -56,23 +67,5 @@ public class SplitJsonTableInputSource extends InputSource {
         TableBlock tableBlock = builder.scanDirectory(resourcesDirectory);
         mCache = tableBlock;
         return tableBlock;
-    }
-    public void setApkLogger(APKLogger logger) {
-        this.apkLogger = logger;
-    }
-    void logMessage(String msg) {
-        if(apkLogger!=null){
-            apkLogger.logMessage(msg);
-        }
-    }
-    private void logError(String msg, Throwable tr) {
-        if(apkLogger!=null){
-            apkLogger.logError(msg, tr);
-        }
-    }
-    private void logVerbose(String msg) {
-        if(apkLogger!=null){
-            apkLogger.logVerbose(msg);
-        }
     }
 }

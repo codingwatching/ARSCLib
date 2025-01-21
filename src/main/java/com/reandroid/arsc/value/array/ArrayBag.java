@@ -22,6 +22,7 @@
  import com.reandroid.arsc.value.bag.Bag;
 
  import java.util.AbstractList;
+ import java.util.Iterator;
  import java.util.RandomAccess;
 
  public class ArrayBag extends AbstractList<ArrayBagItem> implements Bag, RandomAccess {
@@ -47,7 +48,7 @@
          }
 
          ResValueMapArray array = getMapArray();
-         for (int i = regenStart; i < array.childesCount(); i++) {
+         for (int i = regenStart; i < array.size(); i++) {
              setIndex(array.get(i), i);
          }
      }
@@ -63,7 +64,7 @@
 
      @Override
      public int size() {
-         return getMapArray().childesCount();
+         return getMapArray().size();
      }
 
      @Override
@@ -79,7 +80,7 @@
      }
 
      private void setIndex(ResValueMap valueMap, int index) {
-         valueMap.setName(0x01000001 + index);
+         valueMap.setNameId(0x01000001 + index);
      }
 
      @Override
@@ -93,7 +94,7 @@
 
          ResValueMap valueMap = new ResValueMap();
          setIndex(valueMap, index);
-         getMapArray().insertItem(index, valueMap);
+         getMapArray().add(index, valueMap);
          value.copyTo(valueMap);
          updateStructure(index);
      }
@@ -101,7 +102,7 @@
      @Override
      public ArrayBagItem remove(int index) {
          ResValueMapArray array = getMapArray();
-         ResValueMap target = array.getChildes()[index];
+         ResValueMap target = array.get(index);
          array.remove(target);
          updateStructure(index);
          return ArrayBagItem.copyOf(target);
@@ -109,7 +110,7 @@
 
      @Override
      public void clear() {
-         getMapArray().clearChildes();
+         getMapArray().clear();
          updateStructure(-1);
      }
 
@@ -146,22 +147,24 @@
          if (tableEntry.getParentId() != 0) {
              return false;
          }
-         ResValueMap[] items = tableEntry.listResValueMap();
-         if (items.length == 0) {
+         Iterator<ResValueMap> iterator = tableEntry.iterator();
+         if (!iterator.hasNext()) {
              return false;
          }
 
-         for (int i = 0; i < items.length; i++) {
-             ResValueMap resValueMap = items[i];
-             int name = resValueMap.getName();
+         int i = 0;
+         while (iterator.hasNext()) {
+             ResValueMap resValueMap = iterator.next();
+             int name = resValueMap.getNameId();
              int high = (name >> 16) & 0xffff;
-             if(high!=0x0100){
+             if(high != 0x0100){
                  return false;
              }
              int low = name & 0xffff;
-             if(low != (i+1)){
+             if(low != (i + 1)){
                  return false;
              }
+             i ++;
          }
          return true;
      }

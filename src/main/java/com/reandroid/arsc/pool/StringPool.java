@@ -15,38 +15,50 @@
  */
 package com.reandroid.arsc.pool;
 
+import com.reandroid.arsc.array.IntegerOffsetArray;
 import com.reandroid.arsc.array.OffsetArray;
 import com.reandroid.arsc.array.StringArray;
 import com.reandroid.arsc.array.StyleArray;
 import com.reandroid.arsc.base.Block;
 import com.reandroid.arsc.chunk.Chunk;
-import com.reandroid.arsc.group.StringGroup;
 import com.reandroid.arsc.header.StringPoolHeader;
 import com.reandroid.arsc.io.BlockLoad;
 import com.reandroid.arsc.io.BlockReader;
 import com.reandroid.arsc.item.*;
+import com.reandroid.common.BytesOutputStream;
 import com.reandroid.json.JSONArray;
 import com.reandroid.json.JSONConvert;
+import com.reandroid.json.JSONObject;
 import com.reandroid.utils.CompareUtil;
-import com.reandroid.utils.collection.EmptyIterator;
-import com.reandroid.utils.collection.FilterIterator;
+import com.reandroid.utils.NumbersUtil;
+import com.reandroid.utils.StringsUtil;
+import com.reandroid.utils.collection.CollectionUtil;
+import com.reandroid.utils.collection.ComputeIterator;
+import com.reandroid.utils.collection.IterableIterator;
+import com.reandroid.utils.collection.MultiMap;
+import com.reandroid.xml.StyleDocument;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.List;
+import java.util.function.Predicate;
 
-public abstract class StringPool<T extends StringItem> extends Chunk<StringPoolHeader> implements BlockLoad, JSONConvert<JSONArray> {
+public abstract class StringPool<T extends StringItem> extends Chunk<StringPoolHeader>
+        implements BlockLoad, Iterable<T>, JSONConvert<JSONArray> {
+
     private final Object mLock = new Object();
     private final StringArray<T> mArrayStrings;
     private final StyleArray mArrayStyles;
 
-    private final Map<String, StringGroup<T>> mUniqueMap;
+    private final MultiMap<String, T> poolMap;
     private boolean stringLinkLocked;
 
     StringPool(boolean is_utf8, boolean stringLinkLocked){
         super(new StringPoolHeader(), 4);
 
-        OffsetArray offsetStrings = new OffsetArray();
-        OffsetArray offsetStyles = new OffsetArray();
+        IntegerOffsetArray offsetStrings = new IntegerOffsetArray();
+        IntegerOffsetArray offsetStyles = new IntegerOffsetArray();
 
         StringPoolHeader header = getHeaderBlock();
 
@@ -71,171 +83,122 @@ public abstract class StringPool<T extends StringItem> extends Chunk<StringPoolH
 
         header.getFlagUtf8().setBlockLoad(this);
 
-        mUniqueMap = new HashMap<>();
         this.stringLinkLocked = stringLinkLocked;
+        this.poolMap = new MultiMap<>();
+        this.poolMap.setFavouriteObjectsSorter((item1, item2) -> {
+            int i = item1.compareTo(item2);
+            if(i == 0) {
+                i = CompareUtil.compareUnsigned(item1.getIndex(), item2.getIndex());
+            }
+            return i;
+        });
     }
     StringPool(boolean is_utf8){
         this(is_utf8, true);
     }
 
-    void sort(Comparator<T> comparator){
+    @Override
+    public Iterator<T> iterator(){
+        return mArrayStrings.iterator();
+    }
+    public final T get(int index){
+        return mArrayStrings.get(index);
+    }
+    public int size(){
+        return mArrayStrings.getCount();
+    }
+    public boolean isEmpty(){
+        return size() == 0;
+    }
+    public void clear(){
+        getStyleArray().clear();
+        getStringsArray().clear();
+        poolMap.clear();
+    }
+    /**
+     * Use clear()
+     * **/
+    @Deprecated
+    public void destroy(){
+        clear();
+    }
+    public void sort(){
         ensureStringLinkUnlockedInternal();
-        getStringsArray().sort(comparator);
+        getStringsArray().sort();
     }
     public boolean isStringLinkLocked(){
         return stringLinkLocked;
     }
     public void ensureStringLinkUnlockedInternal(){
-        if(!stringLinkLocked){
-            return;
-        }
         synchronized (mLock){
             if(!stringLinkLocked){
                 return;
             }
             stringLinkLocked = false;
             linkStrings();
+            reloadPoolMap();
         }
     }
     void linkStrings(){
-        linkStyles();
+        linkStyleStrings();
     }
-    private void linkStyles(){
+    private void linkStyleStrings(){
         StyleArray styleArray = getStyleArray();
-        if(styleArray == null){
-            return;
-        }
-        StyleItem[] styles = styleArray.getChildes();
-        for(StyleItem styleItem : styles){
-            styleItem.linkIfRequiredInternal();
+        int size = styleArray.size();
+        for(int i = 0; i < size; i++){
+            StyleItem styleItem = styleArray.get(i);
+            styleItem.linkStringsInternal();
         }
     }
-
+    public void linkStylesInternal(){
+        StyleArray styleArray = getStyleArray();
+        StringArray<T> stringsArray = getStringsArray();
+        int size = NumbersUtil.min(stringsArray.size(), styleArray.size());
+        for(int i = 0; i < size; i++){
+            StyleItem styleItem = styleArray.get(i);
+            StringItem stringItem = stringsArray.get(i);
+            stringItem.linkStyleItemInternal(styleItem);
+        }
+    }
     public void removeString(T item){
         getStringsArray().remove(item);
     }
-    public void destroy(){
-        getStyleArray().clearChildes();
-        getStringsArray().clearChildes();
-    }
-    public List<String> toStringList(){
-        return getStringsArray().toStringList();
+    public Iterator<String> getStrings() {
+        return ComputeIterator.of(iterator(), T::getXml);
     }
     public void addStrings(Collection<String> stringList){
-        if(stringList==null || stringList.size()==0){
+        if(stringList == null || stringList.size() == 0){
             return;
         }
-        Set<String> uniqueSet;
-        if(stringList instanceof HashSet){
-            uniqueSet=(HashSet<String>)stringList;
-        }else {
-            uniqueSet=new HashSet<>(stringList);
+        for(String str : stringList) {
+            createNewString(str);
         }
-        refreshUniqueIdMap();
-        Set<String> keySet=mUniqueMap.keySet();
-        for(String key:keySet){
-            uniqueSet.remove(key);
-        }
-        List<String> sortedList=new ArrayList<>(uniqueSet);
-        sortedList.sort(CompareUtil.STRING_COMPARATOR);
-        insertStringList(sortedList);
     }
-    private void insertStringList(List<String> stringList){
-        StringArray<T> stringsArray = getStringsArray();
-        int initialSize=stringsArray.childesCount();
-        stringsArray.ensureSize(initialSize + stringList.size());
-        int size=stringsArray.childesCount();
-        int j=0;
-        for (int i=initialSize;i<size;i++){
-            T item=stringsArray.get(i);
-            item.set(stringList.get(j));
-            j++;
+    private void reloadPoolMap() {
+        if(poolMap.size() == 0) {
+            poolMap.clear();
+            poolMap.setInitialSize(size());
+            poolMap.putAll(StringItem::getXml, iterator());
         }
-        refreshUniqueIdMap();
     }
-    public Map<String, T> insertStrings(List<String> stringList){
-        Map<String, T> results=new HashMap<>();
-        StringArray<T> stringsArray = getStringsArray();
-        int initialSize=stringsArray.childesCount();
-        stringsArray.ensureSize(initialSize + stringList.size());
-        int size=stringsArray.childesCount();
-        int j=0;
-        for (int i=initialSize;i<size;i++){
-            T item=stringsArray.get(i);
-            String str=stringList.get(j);
-            item.set(str);
-            results.put(str, item);
-            j++;
-        }
-        refreshUniqueIdMap();
-        return results;
-    }
-    // call this after modifying string values
-    public void refreshUniqueIdMap(){
-        Map<String, StringGroup<T>> map = mUniqueMap;
-        map.clear();
-        StringArray<T> stringArray = this.mArrayStrings;
-        T[] stringItems = stringArray.getChildes();
-        int length = stringItems.length;
-        if(length == 0){
-            return;
-        }
-        for(int i = 0; i < length; i++){
-            T item = stringItems[i];
-            if(item == null){
-                continue;
+    public void compressDuplicates(){
+        ensureStringLinkUnlockedInternal();
+        poolMap.findDuplicates(CompareUtil.getComparableComparator(), list -> {
+            T first = list.get(0);
+            for(int i = 1; i < list.size(); i++) {
+                T item = list.get(i);
+                first.transferReferences(item);
             }
-            String str = item.getXml();
-            if(str == null){
-                continue;
-            }
-            StringGroup<T> group = map.get(str);
-            if(group == null){
-                group = new StringGroup<>(stringArray, str, item);
-                map.put(str, group);
-            }else {
-                group.add(item);
-            }
-        }
+        });
     }
-    void updateUniqueIdMap(T item){
-        if(item == null){
-            return;
-        }
-        String str = item.getXml();
-        if(str == null){
-            str = "";
-        }
-        StringGroup<T> group = mUniqueMap.get(str);
-        if(group == null){
-            group = new StringGroup<>(mArrayStrings, str, item);
-            mUniqueMap.put(str, group);
-        }else {
-            group.add(item);
-        }
-    }
-    public int clearDuplicates(){
-        int results = 0;
-        Iterator<StringGroup<T>> iterator = mUniqueMap.values().iterator();
-        while (iterator.hasNext()){
-            results += iterator.next().clearDuplicates();
-        }
-        return results;
-    }
-    public Iterator<StringGroup<T>> listDuplicates(){
-        if(mUniqueMap.size() == countStrings() || countStrings() == 0){
-            return EmptyIterator.of();
-        }
-        return new FilterIterator<>(mUniqueMap.values().iterator(), StringGroup::isDuplicate);
-    }
-    public List<T> removeUnusedStrings(){
-        return getStringsArray().removeUnusedStrings();
+    public boolean removeUnusedStrings(){
+        return getStringsArray().removeIf(getUnusedStringsFilter());
     }
     public List<T> listUnusedStrings(){
-        return getStringsArray().listUnusedStrings();
+        return getStringsArray().subListIf(getUnusedStringsFilter());
     }
-    public Collection<T> listStrings(){
-        return getStringsArray().listItems();
+    private Predicate<T> getUnusedStringsFilter() {
+        return item -> !item.hasReference();
     }
     public StyleArray getStyleArray(){
         return mArrayStyles;
@@ -244,66 +207,113 @@ public abstract class StringPool<T extends StringItem> extends Chunk<StringPoolH
         return mArrayStrings;
     }
     public T removeReference(ReferenceItem ref){
-        if(ref==null){
+        if(ref == null){
             return null;
         }
-        T item=get(ref.get());
-        if(item!=null){
+        T item = get(ref.get());
+        if(item != null){
             item.removeReference(ref);
             return item;
         }
         return null;
     }
     public boolean contains(String str){
-        return mUniqueMap.containsKey(str);
+        return poolMap.containsKey(str);
     }
-    public final T get(int index){
-        return mArrayStrings.get(index);
+    public void onStringChanged(String old, T stringItem) {
+        if(!stringLinkLocked){
+            poolMap.updateKey(old, stringItem.getXml(), stringItem);
+        }
+    }
+    public void onStringRemoved(T stringItem) {
+        if(!stringLinkLocked) {
+            poolMap.remove(stringItem.getXml(), stringItem);
+        }
     }
     public final T getLast(){
         return mArrayStrings.getLast();
     }
-    public final StringGroup<T> get(String str){
-        return mUniqueMap.get(str);
+    public<E extends Block> Iterator<E> getUsers(Class<E> parentClass, String value) {
+        return new IterableIterator<T, E>(getAll(value)) {
+            @Override
+            public Iterator<E> iterator(T element) {
+                return element.getUsers(parentClass);
+            }
+        };
+    }
+    public final Iterator<T> getAll(String str){
+        ensureStringLinkUnlockedInternal();
+        return poolMap.getAll(str);
+    }
+    public final T get(String str, Predicate<? super T> predicate){
+        ensureStringLinkUnlockedInternal();
+        return poolMap.get(str, predicate);
+    }
+    public final T getString(String str){
+        return CollectionUtil.getFirst(getAll(str));
     }
     public T getOrCreate(String str){
+        ensureStringLinkUnlockedInternal();
         if(str == null){
-            str = "";
+            str = StringsUtil.EMPTY;
         }
-        StringGroup<T> group = mUniqueMap.get(str);
-        T item;
-        if(group == null){
+        String key = str;
+
+        T item = get(str, stringItem -> key.equals(stringItem.getXml()));
+        if(item == null) {
             item = createNewString(str);
-            group = new StringGroup<>(mArrayStrings, str, item);
-            mUniqueMap.put(str, group);
-        }else if(group.size() == 0){
-            item = createNewString(str);
-            group.add(item);
-        }else {
-            item = group.get(0);
+            poolMap.put(str, item);
         }
         return item;
     }
-    private T createNewString(String str){
-        T item = mArrayStrings.createNext();
+    public T getOrCreate(StyleDocument styleDocument) {
+        ensureStringLinkUnlockedInternal();
+        String xml = styleDocument.getXml();
+        T item = get(xml, StringItem::hasStyle);
+        if(item != null) {
+            return item;
+        }
+        item = createNewString();
+        item.set(styleDocument);
+        return item;
+    }
+    public T getOrCreate(JSONObject jsonObject) {
+        ensureStringLinkUnlockedInternal();
+        JSONObject style = jsonObject.optJSONObject(StringItem.NAME_style);
+        if(style != null) {
+            T item = createNewString();
+            item.set(jsonObject);
+            StyleDocument styleDocument = item.getStyleDocument();
+            if(styleDocument != null) {
+                T exist = getString(styleDocument.getXml());
+                if(exist != null) {
+                    if(item.hasReference()) {
+                        item.set((String) null);
+                        item.setNull(true);
+                    }
+                    return exist;
+                }
+                return item;
+            }
+        }
+        return getOrCreate(jsonObject.getString(StringItem.NAME_string));
+
+    }
+    public T createNewString(String str){
+        T item = createNewString();
         item.set(str);
-        //getHeaderBlock().getCountStrings().set(mArrayStrings.childesCount());
         return item;
     }
-    public final StyleItem getStyle(int index){
-        return mArrayStyles.get(index);
+    public T createNewString() {
+        return mArrayStrings.createNext();
     }
+
+    @Deprecated
     public final int countStrings(){
-        return mArrayStrings.childesCount();
+        return mArrayStrings.size();
     }
     public final int countStyles(){
-        return mArrayStyles.childesCount();
-    }
-    public final T[] getStrings(){
-        return mArrayStrings.getChildes();
-    }
-    public final StyleItem[] getStyles(){
-        return mArrayStyles.getChildes();
+        return mArrayStyles.size();
     }
     public boolean isUtf8(){
         return getHeaderBlock().isUtf8();
@@ -339,13 +349,8 @@ public abstract class StringPool<T extends StringItem> extends Chunk<StringPoolH
     }
     @Override
     public void onChunkLoaded() {
-        refreshUniqueIdMap();
-        StyleItem[] styles = getStyles();
-        if(styles!=null){
-            for(StyleItem styleItem:styles){
-                styleItem.onDataLoaded();
-            }
-        }
+        linkStylesInternal();
+        reloadPoolMap();
     }
 
     @Override
@@ -356,18 +361,43 @@ public abstract class StringPool<T extends StringItem> extends Chunk<StringPoolH
         }
     }
     @Override
+    public byte[] getBytes(){
+        BytesOutputStream outputStream = new BytesOutputStream(
+                getHeaderBlock().getChunkSize());
+        try {
+            writeBytes(outputStream);
+            outputStream.close();
+        } catch (IOException ignored) {
+        }
+        return outputStream.toByteArray();
+    }
+    @Override
     public JSONArray toJson() {
         return getStringsArray().toJson();
     }
     //Only for styled strings
     @Override
     public void fromJson(JSONArray json) {
-        if(json==null){
+        if(json == null){
             return;
         }
-        JsonStringPoolHelper<T> helper=new JsonStringPoolHelper<>(this);
-        helper.loadStyledStrings(json);
+        getStringsArray().fromJson(json);
         refresh();
     }
 
+    boolean containsInternal(T item) {
+        return poolMap.containsValue(item.getXml(),
+                stringItem -> stringItem.compareTo(item) == 0);
+    }
+    public void merge(StringPool<T> stringPool){
+        if(stringPool == null || stringPool == this || stringPool.size() == 0){
+            return;
+        }
+        ensureStringLinkUnlockedInternal();
+        for (T stringItem : stringPool) {
+            if(!containsInternal(stringItem)) {
+                createNewString().merge(stringItem);
+            }
+        }
+    }
 }

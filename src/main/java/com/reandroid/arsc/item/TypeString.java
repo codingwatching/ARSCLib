@@ -39,7 +39,7 @@ public class TypeString extends StringItem {
         return getIndex()+1;
     }
     @Override
-    public StyleItem getStyle(){
+    public StyleItem getOrCreateStyle(){
         // Type don't have style unless to obfuscate/confuse other decompilers
         return null;
     }
@@ -90,6 +90,13 @@ public class TypeString extends StringItem {
     public static boolean isTypeId(String type){
         // TODO: find better way
         return "id".equals(type);
+    }
+    public static boolean isTypeString(String type){
+        // TODO: find better way
+        if(type == null){
+            return false;
+        }
+        return type.equals("string");
     }
     public static String toXmlTagName(String typeName){
         // e.g ^attr-private

@@ -15,18 +15,21 @@
   */
 package com.reandroid.arsc.item;
 
+import com.reandroid.arsc.array.StringArray;
 import com.reandroid.arsc.base.Block;
 import com.reandroid.arsc.coder.ThreeByteCharsetDecoder;
 import com.reandroid.arsc.coder.XmlSanitizer;
 import com.reandroid.arsc.io.BlockReader;
 import com.reandroid.arsc.pool.StringPool;
-import com.reandroid.utils.StringsUtil;
-import com.reandroid.utils.collection.ComputeIterator;
-import com.reandroid.utils.collection.EmptyIterator;
 import com.reandroid.json.JSONConvert;
 import com.reandroid.json.JSONObject;
+import com.reandroid.utils.CompareUtil;
+import com.reandroid.utils.ObjectsUtil;
+import com.reandroid.utils.collection.ComputeIterator;
+import com.reandroid.utils.collection.EmptyIterator;
+import com.reandroid.utils.collection.FilterIterator;
+import com.reandroid.xml.StyleDocument;
 import org.xmlpull.v1.XmlSerializer;
-
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -34,20 +37,31 @@ import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
-import java.util.function.Function;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Set;
 import java.util.function.Predicate;
 
-public class StringItem extends BlockItem implements JSONConvert<JSONObject>, Comparable<StringItem> {
-    private String mCache;
+public class StringItem extends StringBlock implements JSONConvert<JSONObject>, Comparable<StringItem> {
+
     private boolean mUtf8;
     private final Set<ReferenceItem> mReferencedList;
-    private StyleItem mStyleToRemove;
+    private StyleItem mStyleItem;
+
     public StringItem(boolean utf8) {
-        super(0);
-        this.mUtf8=utf8;
+        super();
+        this.mUtf8 = utf8;
         this.mReferencedList = new HashSet<>();
     }
+
+    public StyleDocument getStyleDocument() {
+        if(hasStyle()){
+            return getStyle().build(get());
+        }
+        return null;
+    }
+
     public<T extends Block> Iterator<T> getUsers(Class<T> parentClass){
         return getUsers(parentClass, null);
     }
@@ -58,15 +72,12 @@ public class StringItem extends BlockItem implements JSONConvert<JSONObject>, Co
         if(referencedList.size() == 0){
             return EmptyIterator.of();
         }
-        return new ComputeIterator<>(referencedList.iterator(), new Function<ReferenceItem, T>() {
-            @Override
-            public T apply(ReferenceItem referenceItem) {
-                T result = referenceItem.getReferredParent(parentClass);
-                if (resultFilter != null && !resultFilter.test(result)) {
-                    result = null;
-                }
-                return result;
+        return new ComputeIterator<>(referencedList.iterator(), referenceItem -> {
+            T result = referenceItem.getReferredParent(parentClass);
+            if (result == null || resultFilter != null && !resultFilter.test(result)) {
+                result = null;
             }
+            return result;
         });
 
     }
@@ -74,15 +85,20 @@ public class StringItem extends BlockItem implements JSONConvert<JSONObject>, Co
     public boolean removeReference(ReferenceItem ref){
         return mReferencedList.remove(ref);
     }
-    public boolean removeAllReference(Collection<ReferenceItem> referenceItems){
-        return mReferencedList.removeAll(referenceItems);
-    }
     public void removeAllReference(){
         mReferencedList.clear();
     }
     public boolean hasReference(){
         ensureStringLinkUnlocked();
-        return mReferencedList.size() > 0;
+        if(mReferencedList.size() == 0) {
+            return false;
+        }
+        return FilterIterator.of(mReferencedList.iterator(),
+                referenceItem -> !(referenceItem instanceof StyleItem.StyleIndexReference))
+                .hasNext();
+    }
+    public int getReferencesSize() {
+        return mReferencedList.size();
     }
     public Collection<ReferenceItem> getReferencedList(){
         ensureStringLinkUnlocked();
@@ -120,29 +136,38 @@ public class StringItem extends BlockItem implements JSONConvert<JSONObject>, Co
             ref.set(newIndex);
         }
     }
-    public void onPreRemoveInternal(){
-        mStyleToRemove = getStyle();
-    }
     public void onRemoved(){
+        clearStyle();
         setParent(null);
-        StyleItem styleItem = mStyleToRemove;
-        if(styleItem != null){
-            styleItem.onRemoved();
-        }
     }
     @Override
     public void onIndexChanged(int oldIndex, int newIndex){
         reUpdateReferences(newIndex);
     }
+    @SuppressWarnings("unchecked")
+    @Override
+    protected void onStringChanged(String old, String text) {
+        super.onStringChanged(old, text);
+        StringPool<StringItem> stringPool = getParentInstance(StringPool.class);
+        if(stringPool != null) {
+            stringPool.onStringChanged(old, this);
+        }
+    }
+
     public void serializeText(XmlSerializer serializer) throws IOException {
+        serializeText(serializer, false);
+    }
+    public void serializeText(XmlSerializer serializer, boolean escapeValues) throws IOException {
         String text = get();
         if(text == null){
             return;
         }
-        serializer.text(XmlSanitizer.escapeSpecialCharacter(text));
-    }
-    public void serializeAttribute(XmlSerializer serializer, String name) throws IOException {
-        serializeAttribute(serializer, null, name);
+        if(escapeValues){
+            text = XmlSanitizer.escapeDecodedValue(text);
+        }else {
+            text = XmlSanitizer.escapeSpecialCharacter(text);
+        }
+        serializer.text(text);
     }
     public void serializeAttribute(XmlSerializer serializer, String namespace, String name) throws IOException {
         String text = get();
@@ -177,74 +202,87 @@ public class StringItem extends BlockItem implements JSONConvert<JSONObject>, Co
         }
         return styleItem.applyStyle(text, true, escapeXmlText);
     }
-    public String get(){
-        return mCache;
-    }
+    @Override
     public void set(String str){
-        String old=get();
-        if(str==null){
-            if(old==null){
-                return;
-            }
-        }else if(str.equals(old)){
-            return;
-        }
-        if(str==null){
-            StyleItem styleItem = getStyle();
-            if(styleItem!=null){
-                styleItem.clearStyle();
+        if(str == null){
+            StyleItem style = getStyle();
+            if(style != null){
+                style.clearStyle();
             }
         }
-        byte[] bts=encodeString(str);
-        setBytesInternal(bts);
+        super.set(str);
+    }
+    public void set(StyleDocument document){
+        String old = getXml();
+        if(countBytes() == 0) {
+            old = null;
+        }
+        clearStyle();
+        this.set(document.getStyledString(), false);
+        if(document.hasElements()) {
+            StyleItem styleItem = getOrCreateStyle();
+            styleItem.parse(document);
+        }
+        String update = getXml();
+        onStringChanged(old, update);
+    }
+    public void set(JSONObject jsonObject){
+        String old = getXml();
+        if(countBytes() == 0) {
+            old = null;
+        }
+        clearStyle();
+        this.set(jsonObject.getString(NAME_string), false);
+        JSONObject style = jsonObject.optJSONObject(NAME_style);
+        if(style != null) {
+            StyleItem styleItem = getOrCreateStyle();
+            styleItem.fromJson(style);
+        }
+        String update = getXml();
+        onStringChanged(old, update);
     }
 
     public boolean isUtf8(){
         return mUtf8;
     }
     public void setUtf8(boolean utf8){
-        if(utf8==mUtf8){
+        if(utf8 == mUtf8){
             return;
         }
-        mUtf8=utf8;
+        mUtf8 = utf8;
         onBytesChanged();
-    }
-    @Override
-    protected void onBytesChanged() {
-        // To save cpu/memory usage, better to decode once only when bytes changed
-        mCache=decodeString();
     }
     @Override
     public void onReadBytes(BlockReader reader) throws IOException {
-        if(reader.available()<4){
+        if(reader.available() < 4){
             return;
         }
-        int len=calculateReadLength(reader);
-        setBytesLength(len, false);
-        byte[] bts=getBytesInternal();
-        reader.readFully(bts);
+        setBytesLength(calculateReadLength(reader), false);
+        reader.readFully(getBytesInternal());
         onBytesChanged();
     }
     int calculateReadLength(BlockReader reader) throws IOException {
-        if(reader.available()<4){
+        if(reader.available() < 4){
             return reader.available();
         }
-        byte[] bts=new byte[4];
-        reader.readFully(bts);
+        byte[] bytes = new byte[4];
+        reader.readFully(bytes);
         reader.offset(-4);
-        int[] len;
+        int[] lengthResult;
         if(isUtf8()){
-            len=decodeUtf8StringByteLength(bts);
+            lengthResult = decodeUtf8StringByteLength(bytes);
         }else {
-            len=decodeUtf16StringByteLength(bts);
+            lengthResult = decodeUtf16StringByteLength(bytes);
         }
-        int add=isUtf8()?1:2;
-        return len[0]+len[1]+add;
+        int add = isUtf8()? 1:2;
+        return lengthResult[0] + lengthResult[1] + add;
     }
-    String decodeString(){
-        return decodeString(getBytesInternal(), mUtf8);
+    @Override
+    protected String decodeString(byte[] bytes){
+        return decodeString(bytes, mUtf8);
     }
-    byte[] encodeString(String str){
+    @Override
+    protected byte[] encodeString(String str){
         if(mUtf8){
             return encodeUtf8ToBytes(str);
         }else {
@@ -295,15 +333,48 @@ public class StringItem extends BlockItem implements JSONConvert<JSONObject>, Co
         if(styleItem==null){
             return false;
         }
-        return styleItem.getSpanInfoList().size()>0;
+        return styleItem.size()>0;
     }
     public StyleItem getStyle(){
-        StringPool<?> stringPool = getParentInstance(StringPool.class);
-        if(stringPool==null){
-            return null;
+        return mStyleItem;
+    }
+    public StyleItem getOrCreateStyle(){
+        StyleItem styleItem = getStyle();
+        if(styleItem == null) {
+            styleItem = getParentInstance(StringPool.class).getStyleArray().createNext();
+            linkStyleItemInternal(styleItem);
+            styleItem = getStyle();
         }
-        int index=getIndex();
-        return stringPool.getStyle(index);
+        return styleItem;
+    }
+    public void linkStyleItemInternal(StyleItem styleItem) {
+        if(styleItem == null) {
+            throw new NullPointerException("Can not link null style item");
+        }
+        if(this.mStyleItem == styleItem) {
+            return;
+        }
+        if(this.mStyleItem != null) {
+            throw new IllegalStateException("Style item is already linked");
+        }
+        this.mStyleItem = styleItem;
+        styleItem.setStringItemInternal(this);
+    }
+    public void unlinkStyleItemInternal(StyleItem styleItem) {
+        if(this.mStyleItem == null) {
+            return;
+        }
+        if(styleItem != this.mStyleItem) {
+            throw new IllegalStateException("Wrong style item");
+        }
+        this.mStyleItem = null;
+        styleItem.setStringItemInternal(null);
+    }
+    private void clearStyle() {
+        StyleItem styleItem = getStyle();
+        if(styleItem != null) {
+            styleItem.clearStyle();
+        }
     }
     public void transferReferences(StringItem source){
         if(source == this || source == null || getParent() != source.getParent()){
@@ -325,44 +396,63 @@ public class StringItem extends BlockItem implements JSONConvert<JSONObject>, Co
     private boolean isTransferable(ReferenceItem referenceItem){
         return !((referenceItem instanceof WeakStringReference));
     }
+    public boolean merge(StringItem other) {
+        if(!canMerge(other)) {
+            return false;
+        }
+        clearStyle();
+        set(other.get(), false);
+        StyleItem otherStyle = other.getStyle();
+        if(otherStyle != null && otherStyle.hasSpans()) {
+            getOrCreateStyle().merge(otherStyle);
+        }
+        onStringChanged(null, getXml());
+        return true;
+    }
+    boolean canMerge(StringItem stringItem) {
+        if(stringItem == null || stringItem == this) {
+            return false;
+        }
+        Block array1 = this.getParentInstance(StringArray.class);
+        Block array2 = stringItem.getParentInstance(StringArray.class);
+        return array1 != null && array2 != null && array1 != array2;
+    }
     @Override
     public int compareTo(StringItem stringItem) {
-        if(stringItem == null){
+        if (stringItem == null) {
             return -1;
         }
-        boolean has_style1 = hasStyle();
-        boolean has_style2 = stringItem.hasStyle();
-        if(has_style1 && !has_style2){
-            return -1;
+        if (stringItem == this) {
+            return 0;
         }
-        if(!has_style1 && has_style2){
-            return 1;
+        int i = compareStringValue(stringItem);
+        if(i != 0) {
+            return i;
         }
-        return StringsUtil.compareStrings(getXml(), stringItem.getXml());
+        return compareReferences(stringItem);
+    }
+    public int compareStringValue(StringItem stringItem) {
+        int i = -1 * CompareUtil.compare(hasStyle(), stringItem.hasStyle());
+        if(i != 0) {
+            return i;
+        }
+        return CompareUtil.compare(getXml(), stringItem.getXml());
+    }
+    public int compareReferences(StringItem stringItem) {
+        return CompareUtil.compare(stringItem.getReferencesSize(), this.getReferencesSize());
     }
     @Override
     public JSONObject toJson() {
-        if(isNull()){
-            return null;
-        }
-        StyleItem styleItem=getStyle();
-        if(styleItem == null){
-            return null;
-        }
-        JSONObject jsonObject=new JSONObject();
+        JSONObject jsonObject = new JSONObject();
         jsonObject.put(NAME_string, get());
-        JSONObject styleJson = styleItem.toJson();
-        if(styleJson == null){
-            return null;
+        if(hasStyle()) {
+            jsonObject.put(NAME_style, getStyle().toJson());
         }
-        jsonObject.put(NAME_style, styleJson);
         return jsonObject;
     }
     @Override
     public void fromJson(JSONObject json) {
-        String str = json.getString(NAME_string);
-        set(str);
-        throw new IllegalArgumentException("Not implemented");
+        set(json);
     }
     @Override
     public String toString(){
@@ -372,7 +462,7 @@ public class StringItem extends BlockItem implements JSONConvert<JSONObject>, Co
         }
         StringPool<?> stringPool = getParentInstance(StringPool.class);
         if(stringPool != null && !stringPool.isStringLinkLocked()){
-            return getIndex() + ": USED BY=" + mReferencedList.size() + "{" + xml + "}";
+            return getIndex() + ": USED BY=" + getReferencesSize() + "{" + xml + "}";
         }
         return getIndex() + ":" + xml;
     }
@@ -513,9 +603,8 @@ public class StringItem extends BlockItem implements JSONConvert<JSONObject>, Co
     }
 
     private static final CharsetDecoder UTF16LE_DECODER = StandardCharsets.UTF_16LE.newDecoder();
-    private static final CharsetDecoder UTF8_DECODER = StandardCharsets.UTF_8.newDecoder();
     private static final CharsetDecoder DECODER_3B = ThreeByteCharsetDecoder.INSTANCE;
 
-    public static final String NAME_string="string";
-    public static final String NAME_style="style";
+    public static final String NAME_string = ObjectsUtil.of("string");
+    public static final String NAME_style = ObjectsUtil.of("style");
 }

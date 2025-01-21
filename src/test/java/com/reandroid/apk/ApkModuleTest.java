@@ -1,21 +1,33 @@
 package com.reandroid.apk;
 
-import com.reandroid.archive.ByteInputSource;
-import com.reandroid.archive.InputSource;
+import com.reandroid.TestUtils;
+import com.reandroid.app.AndroidApiLevel;
+import com.reandroid.app.AndroidManifest;
 import com.reandroid.archive.ArchiveBytes;
+import com.reandroid.archive.ByteInputSource;
 import com.reandroid.arsc.array.ResValueMapArray;
 import com.reandroid.arsc.chunk.PackageBlock;
 import com.reandroid.arsc.chunk.TableBlock;
 import com.reandroid.arsc.chunk.xml.AndroidManifestBlock;
+import com.reandroid.arsc.chunk.xml.ResXmlAttribute;
+import com.reandroid.arsc.chunk.xml.ResXmlDocument;
+import com.reandroid.arsc.chunk.xml.ResXmlElement;
 import com.reandroid.arsc.coder.EncodeResult;
 import com.reandroid.arsc.coder.ValueCoder;
+import com.reandroid.arsc.io.BlockReader;
 import com.reandroid.arsc.item.TableString;
 import com.reandroid.arsc.model.ResourceEntry;
 import com.reandroid.arsc.pool.TableStringPool;
 import com.reandroid.arsc.value.*;
-import com.reandroid.utils.io.FileUtil;
-import com.reandroid.utils.io.IOUtil;
-import com.reandroid.xml.*;
+import com.reandroid.common.ReferenceResolver;
+import com.reandroid.dex.SampleDexFileCreator;
+import com.reandroid.dex.model.DexFile;
+import com.reandroid.utils.HexUtil;
+import com.reandroid.utils.StringsUtil;
+import com.reandroid.utils.collection.CollectionUtil;
+import com.reandroid.xml.StyleDocument;
+import com.reandroid.xml.StyleElement;
+import com.reandroid.xml.StyleText;
 import org.junit.Assert;
 import org.junit.FixMethodOrder;
 import org.junit.Test;
@@ -24,7 +36,7 @@ import org.junit.runners.MethodSorters;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Map;
+import java.util.List;
 import java.util.zip.ZipEntry;
 
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
@@ -38,11 +50,11 @@ public class ApkModuleTest {
         }
         ApkModule apkModule = createApkModule();
 
-        Assert.assertNotNull("Manifest block", apkModule.getAndroidManifestBlock());
+        Assert.assertNotNull("Manifest block", apkModule.getAndroidManifest());
         Assert.assertNotNull("Table block", apkModule.getTableBlock());
 
         ApkModuleXmlDecoder decoder = new ApkModuleXmlDecoder(apkModule);
-        File dir = FileUtil.getTempDir();
+        File dir = TestUtils.getTempDir();
         decoder.decode(dir);
     }
     @Test
@@ -73,11 +85,125 @@ public class ApkModuleTest {
         apkModule.add(tableSource);
         tableSource.setMethod(ZipEntry.STORED);
 
-        apkModule.add(new ByteInputSource(EMPTY_DEX_FILE, "classes.dex"));
+        int mainActivityLayoutId = createMainActivityContentViewXml(apkModule);
 
+        apkModule.getTableBlock().refreshFull();
+
+        String appClass = manifestBlock.getApplicationClassName();
+        String mainActivity = manifestBlock.getMainActivityClassName();
+
+        DexFile dexFile = SampleDexFileCreator.createApplicationClass(appClass, mainActivity, mainActivityLayoutId);
+        byte[] bytes = dexFile.getBytes();
+        apkModule.add(new ByteInputSource(bytes, "classes.dex"));
+
+        File generated_apk = new File(TestUtils.getTesApkDirectory(), "generated.apk");
+        generated_apk.delete();
+        apkModule.writeApk(generated_apk);
+        apkModule = ApkModule.loadApkFile(generated_apk);
         last_apkModule = apkModule;
 
         return apkModule;
+    }
+    private int createMainActivityContentViewXml(ApkModule apkModule){
+        ResXmlDocument document = new ResXmlDocument();
+        ResXmlElement root = document.getDocumentElement();
+        root.setName("LinearLayout");
+
+        ResXmlAttribute attribute = root.getOrCreateAndroidAttribute("layout_width", 0x010100f4);
+        attribute.setTypeAndData(ValueType.DEC, -1); // match_parent
+
+        attribute = root.getOrCreateAndroidAttribute("layout_height", 0x010100f5);
+        attribute.setTypeAndData(ValueType.DEC, -1); // match_parent
+
+        attribute = root.getOrCreateAndroidAttribute("orientation", 0x010100c4);
+        attribute.setTypeAndData(ValueType.DEC, 1); // vertical
+
+        ResXmlElement textView = root.newElement("TextView");
+        attribute = textView.getOrCreateAndroidAttribute("layout_width", 0x010100f4);
+        attribute.setTypeAndData(ValueType.DEC, -1); // wrap_content
+
+        attribute = textView.getOrCreateAndroidAttribute("layout_height", 0x010100f5);
+        attribute.setTypeAndData(ValueType.DEC, -2); // wrap_content
+
+        attribute = textView.getOrCreateAndroidAttribute("text", 0x0101014f);
+        TableBlock tableBlock = apkModule.getTableBlock();
+        PackageBlock packageBlock = tableBlock.pickOne();
+
+        Entry helloEntry = packageBlock.getOrCreate(ResConfig.getDefault(), "string", "hello_world");
+
+        String text = "<hr/><br><font size=\"30\" color=\"green\">Hello World</font></br>" +
+                "<ul>" +
+                "<li><b>\nType id offset = " +
+                helloEntry.getPackageBlock().getHeaderBlock().getTypeIdOffsetItem().get() +
+                "</b></li>" +
+                "<li><b>\nType = " +
+                helloEntry.getTypeName() +
+                "</b></li>" +
+                "<li><b>\nName = " +
+                helloEntry.getName() +
+                "</b></li>" +
+                "<li><b>\nType index = " +
+                helloEntry.getTypeBlock().getTypeString().getIndex() +
+                "</b></li>" +
+                "<li><b>\nType id = " +
+                helloEntry.getTypeId() +
+                "</b></li>" +
+                "<li><b>\nResource id = " +
+                HexUtil.toHex(helloEntry.getResourceId(), 8) +
+                "</b></li>" +
+                "</ul>";
+        StyleDocument styleDocument = null;
+        try {
+            styleDocument = StyleDocument.parseStyledString(text);
+        } catch (Exception ignored) {
+        }
+        Assert.assertNotNull(styleDocument);
+        helloEntry.setValueAsString(styleDocument);
+        Assert.assertEquals(text, helloEntry.getResValue().getValueAsString());
+        attribute.setTypeAndData(ValueType.REFERENCE, helloEntry.getResourceId());
+
+        createStyledStringInXmlDocument(root);
+
+        document.refreshFull();
+
+        String path = "res/layout/activity_main.xml";
+
+        ByteInputSource source = new ByteInputSource(document.getBytes(), path);
+        apkModule.add(source);
+
+        Entry layoutEntry = tableBlock.pickOne().getOrCreate("", "layout", "activity_main");
+        layoutEntry.setValueAsString(path);
+
+
+        return layoutEntry.getResourceId();
+    }
+    private void createStyledStringInXmlDocument(ResXmlElement root) {
+
+        ResXmlElement textView2 = root.newElement("TextView");
+        ResXmlAttribute attribute = textView2.getOrCreateAndroidAttribute("layout_width", 0x010100f4);
+        attribute.setTypeAndData(ValueType.DEC, -1); // wrap_content
+
+        attribute = textView2.getOrCreateAndroidAttribute("layout_height", 0x010100f5);
+        attribute.setTypeAndData(ValueType.DEC, -2); // wrap_content
+
+        attribute = textView2.getOrCreateAndroidAttribute("text", 0x0101014f);
+
+        createStyledStringInXmlAttribute(attribute);
+    }
+    private void createStyledStringInXmlAttribute(ResXmlAttribute attribute) {
+
+        String text = "This is <a href=\"https://www.github.com/REAndroid/ARSCLib\"><font size=\"30\" color=\"red\">STYLED!</font></a><b>string in xml document</b>";
+
+        text="To em. <a href=\"intent:#Intent;action=android.settings.SYSTEM_UPDATE_SETTINGS;end\"/> Upd";
+        StyleDocument styleDocument = null;
+        try {
+            styleDocument = StyleDocument.parseStyledString(text);
+        } catch (Exception ignored) {
+            throw new RuntimeException(ignored);
+        }
+        Assert.assertNotNull(styleDocument);
+
+        attribute.setValueAsString(styleDocument);
     }
     private TableBlock createTableBlock(AndroidManifestBlock manifestBlock){
         TableBlock tableBlock = new TableBlock();
@@ -85,13 +211,13 @@ public class ApkModuleTest {
         int packageId = 0x7f;
         PackageBlock packageBlock = tableBlock.newPackage(
                 packageId, packageName);
+        packageBlock.getHeaderBlock().setTypeIdOffset(0);
         StyleDocument xmlDocument = new StyleDocument();
-        xmlDocument.add(new StyleText("The quick"));
-        StyleElement element = new StyleElement();
-        xmlDocument.add(element);
+        xmlDocument.newText().setText("The quick");
+        StyleElement element = xmlDocument.newElement();
         element.setName("br");
         element.addText("brown fox");
-        xmlDocument.add(new StyleText("jumps over lazy dog"));
+        xmlDocument.newText().setText("jumps over lazy dog");
         TableStringPool pool = tableBlock.getStringPool();
         TableString tableString = pool.getOrCreate(xmlDocument);
         Entry someStyle = packageBlock.getOrCreate("", "string", "some_style");
@@ -101,8 +227,16 @@ public class ApkModuleTest {
         String app_name = "ARSCLib Test";
         Entry appName = packageBlock.getOrCreate("", "string", "app_name");
         appName.setValueAsString(app_name);
+        packageBlock.getOrCreate("-en-rUS-watch", "string", "app_name").setValueAsString(app_name + "-en-rUS-watch");
+        packageBlock.getOrCreate("-en", "string", "app_name").setValueAsString(app_name + "-en");
+        packageBlock.getOrCreate("-en-rUS", "string", "app_name").setValueAsString(app_name + "-en-rUS");
+        packageBlock.getOrCreate("-en-rCA", "string", "app_name").setValueAsString(app_name + "-en-rCA");
 
-        Assert.assertEquals("packages count", 1, tableBlock.countPackages());
+        ReferenceResolver referenceResolver = new ReferenceResolver(packageBlock.getTableBlock());
+        List<Entry> entryList = referenceResolver.resolveWithConfig(appName.getResourceId(), ResConfig.parse("-en"));
+        Assert.assertEquals("packages count", 4, entryList.size());
+
+        Assert.assertEquals("packages count", 1, tableBlock.size());
         Assert.assertEquals("package id", packageId, packageBlock.getId());
         Assert.assertEquals("package name", packageName, packageBlock.getName());
 
@@ -148,7 +282,7 @@ public class ApkModuleTest {
         Assert.assertNotEquals(appName_de.getResValue().getValueAsString(),
                 appName_ru.getResValue().getValueAsString());
 
-        Assert.assertEquals("Configs count", 3, resourceEntry.getConfigsCount());
+        Assert.assertEquals("Configs count", 7, resourceEntry.getConfigsCount());
 
         Assert.assertNull("Table search by error id",
                 tableBlock.getResource(appName.getResourceId() + 1));
@@ -168,6 +302,7 @@ public class ApkModuleTest {
         createAttrEntry(packageBlock);
         createArrayEntry(packageBlock);
         createMoreStrings(packageBlock);
+        addArrayBagStrings_1(packageBlock);
 
         tableBlock.refreshFull();
 
@@ -181,6 +316,91 @@ public class ApkModuleTest {
         Assert.assertNotNull("resValue", resValue);
         Assert.assertEquals("@integer/value", resValue.getValueAsString());
 
+        entry = packageBlock
+                .getOrCreate("", "string", "test_issue_apkeditor_65");
+        entry.setValueAsString("3");
+        resValue = entry.getResValue();
+        Assert.assertEquals("3", resValue.getValueAsString());
+
+        createMoreStrings_65(packageBlock);
+        createMoreStrings_62(packageBlock);
+    }
+    private void createMoreStrings_65(PackageBlock packageBlock){
+
+        Entry entry = packageBlock
+                .getOrCreate("", "string", "test_issue_apkeditor_65");
+        String text = "3";
+        entry.setValueAsString(text);
+        ResValue resValue = entry.getResValue();
+        Assert.assertEquals(text, resValue.getValueAsString());
+    }
+    private void createMoreStrings_62(PackageBlock packageBlock){
+
+        Entry entry = packageBlock
+                .getOrCreate("", "string", "test_issue_apkeditor_62");
+
+        String text = "<font size=\"30\" color=\"red\">Multi attribute styled string</font>";
+        StyleDocument styleDocument = null;
+        Exception exception = null;
+        try {
+            styleDocument = StyleDocument.parseStyledString(text);
+        } catch (Exception ex) {
+            exception = ex;
+        }
+        Assert.assertNull(exception);
+        Assert.assertNotNull(styleDocument);
+        entry.setValueAsString(styleDocument);
+        ResValue resValue = entry.getResValue();
+        TableString stringItem = (TableString) resValue.getDataAsPoolString();
+        StyleDocument document = stringItem.getStyleDocument();
+        Assert.assertNotNull(document);
+
+        packageBlock.getTableBlock().refreshFull();
+
+        Assert.assertEquals(text, resValue.getValueAsString());
+    }
+    private void addArrayBagStrings_1(PackageBlock packageBlock){
+
+        Entry entry = packageBlock
+                .getOrCreate("", "array", "test_array_bag_1");
+        entry.ensureComplex(true);
+        ResTableMapEntry mapEntry = entry.getResTableMapEntry();
+
+        mapEntry.setValuesCount(5);
+
+        ResValueMapArray mapArray = mapEntry.getValue();
+
+        ResValueMap valueMap;
+
+        valueMap = mapArray.get(0);
+        Assert.assertNotNull(valueMap);
+        valueMap.setArrayIndex(1);
+        String text = "123";
+        valueMap.setValueAsString(text);
+
+        valueMap = mapArray.get(1);
+        Assert.assertNotNull(valueMap);
+        valueMap.setArrayIndex(2);
+        text = "10.0dp";
+        valueMap.setValueAsString(text);
+
+        valueMap = mapArray.get(2);
+        Assert.assertNotNull(valueMap);
+        valueMap.setArrayIndex(3);
+        valueMap.setTypeAndData(ValueType.DEC, 123);
+
+        valueMap = mapArray.get(3);
+        Assert.assertNotNull(valueMap);
+        valueMap.setArrayIndex(4);
+        text = "#ffaa00";
+        valueMap.setValueAsString(text);
+        entry.getResTableMapEntry().refresh();
+
+        valueMap = mapArray.get(4);
+        Assert.assertNotNull(valueMap);
+        valueMap.setArrayIndex(5);
+        text = "@string/app_name";
+        valueMap.setValueAsString(text);
     }
     private void createAttrEntry(PackageBlock packageBlock){
         Entry entry = packageBlock
@@ -205,6 +425,8 @@ public class ApkModuleTest {
         Entry entry = packageBlock
                 .getOrCreate("", "array", "array_1");
         entry.ensureComplex(true);
+        Entry appName = packageBlock.getOrCreate("", "string", "app_name");
+
 
         ResValueMapArray mapArray = entry.getResValueMapArray();
 
@@ -213,6 +435,10 @@ public class ApkModuleTest {
 
         valueMap.setValueAsString("@integer/value");
         Assert.assertEquals("@integer/value", valueMap.getValueAsString());
+
+        valueMap = mapArray.createNext();
+        valueMap.setArrayIndex(2);
+        valueMap.setTypeAndData(ValueType.REFERENCE, appName.getResourceId());
 
         mapArray.refresh();
 
@@ -226,14 +452,21 @@ public class ApkModuleTest {
 
         manifestBlock.setCompileSdkVersion(frameworkApk.getVersionCode());
         manifestBlock.setCompileSdkVersionCodename(frameworkApk.getVersionName());
+        manifestBlock.setCompileSdk(AndroidApiLevel.J);
 
         manifestBlock.setPlatformBuildVersionCode(frameworkApk.getVersionCode());
         manifestBlock.setPlatformBuildVersionName(frameworkApk.getVersionName());
+        manifestBlock.setPlatformBuild(AndroidApiLevel.J);
+        manifestBlock.setMinSdkVersion(AndroidApiLevel.J.getApi());
+        manifestBlock.setTargetSdkVersion(AndroidApiLevel.J.getApi());
 
         manifestBlock.addUsesPermission("android.permission.INTERNET");
         manifestBlock.addUsesPermission("android.permission.READ_EXTERNAL_STORAGE");
 
-        manifestBlock.getOrCreateMainActivity("android.app.Activity");
+        addEmptyAttributeValue(manifestBlock);
+
+        manifestBlock.setApplicationClassName(manifestBlock.getPackageName() + ".MyApplication");
+        manifestBlock.setMainActivityClassName(".MyActivity");
 
         manifestBlock.refresh();
 
@@ -241,16 +474,23 @@ public class ApkModuleTest {
         Assert.assertEquals("versionCode", Integer.valueOf(1), manifestBlock.getVersionCode());
         Assert.assertEquals("versionName", "1.0", manifestBlock.getVersionName());
 
+        Assert.assertEquals("Application class", manifestBlock.getPackageName() + ".MyApplication", manifestBlock.getApplicationClassName());
+        Assert.assertEquals("Main activity", manifestBlock.getPackageName() + ".MyActivity", manifestBlock.getMainActivityClassName());
+
         Assert.assertEquals("compileSdkVersion",
                 Integer.valueOf(1), manifestBlock.getVersionCode());
         Assert.assertEquals("compileSdkVersionCodeName",
                 "1.0", manifestBlock.getVersionName());
 
+        /*
         Assert.assertEquals("platformBuildVersionCode",
                 Integer.valueOf(frameworkApk.getVersionCode()), manifestBlock.getPlatformBuildVersionCode());
+
         Assert.assertEquals("platformBuildVersionName",
                 frameworkApk.getVersionName(), manifestBlock.getPlatformBuildVersionName());
 
+
+         */
         Assert.assertNotNull("android.permission.INTERNET",
                 manifestBlock.getUsesPermission("android.permission.INTERNET"));
         Assert.assertNotNull("android.permission.READ_EXTERNAL_STORAGE",
@@ -258,33 +498,42 @@ public class ApkModuleTest {
 
         Assert.assertNull("android.permission.NOTHING",
                 manifestBlock.getUsesPermission("android.permission.NOTHING"));
+        manifestBlock.refreshFull();
+        byte[] bytes = manifestBlock.getBytes();
+        manifestBlock = new AndroidManifestBlock();
+        manifestBlock.readBytes(new BlockReader(bytes));
+
+        ResXmlElement application = manifestBlock.getApplicationElement();
+        Assert.assertNotNull(application);
+        ResXmlElement metaData = CollectionUtil.getFirst(application.getElements(element -> {
+            if(!element.equalsName(AndroidManifest.TAG_meta_data)){
+                return false;
+            }
+            ResXmlAttribute attribute = element.searchAttributeByResourceId(AndroidManifest.ID_name);
+            return attribute != null && EMPTY_META_NAME.equals(attribute.getValueAsString());
+        }));
+        Assert.assertNotNull(metaData);
+        ResXmlAttribute attribute = metaData.searchAttributeByResourceId(AndroidManifest.ID_value);
+        Assert.assertNotNull(attribute);
+        Assert.assertEquals("Test empty attribute value failed ",StringsUtil.EMPTY, attribute.getValueAsString());
 
         return manifestBlock;
+    }
+    private void addEmptyAttributeValue(AndroidManifestBlock manifestBlock){
+        ResXmlElement application = manifestBlock.getOrCreateApplicationElement();
+        ResXmlElement meta = application.newElement(AndroidManifest.TAG_meta_data);
+        ResXmlAttribute name = meta.getOrCreateAndroidAttribute(AndroidManifest.NAME_name,
+                AndroidManifest.ID_name);
+        name.setValueAsString(EMPTY_META_NAME);
+
+        ResXmlAttribute value = meta.getOrCreateAndroidAttribute(AndroidManifest.NAME_value,
+                AndroidManifest.ID_value);
+        value.setValueAsString(StringsUtil.EMPTY);
     }
     public static ApkModule getLastApkModule(){
         return last_apkModule;
     }
 
-    private static final byte[] EMPTY_DEX_FILE =  new byte[]{
-            (byte)0x64, (byte)0x65, (byte)0x78, (byte)0x0A, (byte)0x30, (byte)0x33, (byte)0x35, (byte)0x00,
-            (byte)0xE0, (byte)0x0E, (byte)0x82, (byte)0xEC, (byte)0xC5, (byte)0xCC, (byte)0x6A, (byte)0xFF,
-            (byte)0x1E, (byte)0x65, (byte)0xE2, (byte)0x24, (byte)0x9A, (byte)0x48, (byte)0x13, (byte)0x52,
-            (byte)0x4C, (byte)0xEE, (byte)0xA2, (byte)0xA1, (byte)0x71, (byte)0x9D, (byte)0x67, (byte)0xE6,
-            (byte)0x9C, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x70, (byte)0x00, (byte)0x00, (byte)0x00,
-            (byte)0x78, (byte)0x56, (byte)0x34, (byte)0x12, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00,
-            (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x74, (byte)0x00, (byte)0x00, (byte)0x00,
-            (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00,
-            (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00,
-            (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00,
-            (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00,
-            (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00,
-            (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00,
-            (byte)0x2C, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x70, (byte)0x00, (byte)0x00, (byte)0x00,
-            (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x03, (byte)0x00, (byte)0x00, (byte)0x00,
-            (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x01, (byte)0x00, (byte)0x00, (byte)0x00,
-            (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x03, (byte)0x10, (byte)0x00, (byte)0x00,
-            (byte)0x01, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x70, (byte)0x00, (byte)0x00, (byte)0x00,
-            (byte)0x00, (byte)0x10, (byte)0x00, (byte)0x00, (byte)0x01, (byte)0x00, (byte)0x00, (byte)0x00,
-            (byte)0x74, (byte)0x00, (byte)0x00, (byte)0x00
-    };
+    static final String EMPTY_META_NAME = "test-empty-attribute";
+
 }
