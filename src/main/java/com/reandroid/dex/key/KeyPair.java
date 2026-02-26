@@ -222,7 +222,7 @@ public class KeyPair<T1 extends Key, T2 extends Key>
         reader.skipWhitespacesOrComment();
         SmaliParseException.expect(reader, '=');
         reader.skipWhitespaces();
-        Key second = readKey(directive, reader);
+        Key second = readSecondKey(first, directive, reader);
         if (first == NullValueKey.INSTANCE) {
             first = null;
         }
@@ -234,6 +234,18 @@ public class KeyPair<T1 extends Key, T2 extends Key>
             pair = pair.dualChecking();
         }
         return ObjectsUtil.cast(pair);
+    }
+    private static Key readSecondKey(Key firstKey, SmaliDirective directive, SmaliReader reader) throws IOException {
+        if (reader.finished()) {
+            throw new SmaliParseException(
+                    "Finished reading", reader);
+        }
+        if (firstKey instanceof NamedTypeKey && reader.get() == '"') {
+            StringKey name = StringKey.read(reader);
+            NamedTypeKey namedTypeKey = (NamedTypeKey) firstKey;
+            return namedTypeKey.changeName(name);
+        }
+        return readKey(directive, reader);
     }
     private static Key readKey(SmaliDirective directive, SmaliReader reader) throws IOException {
         if (reader.finished()) {

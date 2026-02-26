@@ -125,6 +125,10 @@ public class DexTry extends DexCode {
         return ComputeIterator.of(getTryItem().getExceptionHandlersForAddress(address),
                 this::create);
     }
+    public Iterator<DexCatch> getCatchesAt(int address) {
+        return ComputeIterator.of(getTryItem().getExceptionHandlersForCatchAddress(address),
+                this::create);
+    }
     public boolean trapsCatchAll() {
         return traps(null, this.address);
     }

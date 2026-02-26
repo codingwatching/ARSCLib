@@ -153,7 +153,7 @@ public class MethodId extends IdItem implements Comparable<MethodId> {
         }
         defining.setKey(key.getDeclaring());
         nameReference.setKey(key.getNameKey());
-        proto.setKey(key.getProto());
+        proto.setKey(key.getType());
         keyChanged(old);
     }
     @Override

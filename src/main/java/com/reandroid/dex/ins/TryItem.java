@@ -24,6 +24,7 @@ import com.reandroid.dex.common.IdUsageIterator;
 import com.reandroid.dex.data.FixedDexContainerWithTool;
 import com.reandroid.dex.data.InstructionList;
 import com.reandroid.dex.id.IdItem;
+import com.reandroid.dex.key.Key;
 import com.reandroid.dex.key.TypeKey;
 import com.reandroid.dex.smali.model.SmaliCodeCatch;
 import com.reandroid.dex.smali.model.SmaliCodeCatchAll;
@@ -226,6 +227,10 @@ public class TryItem extends FixedDexContainerWithTool implements
     public Iterator<ExceptionHandler> getExceptionHandlersForAddress(int address) {
         return FilterIterator.of(getExceptionHandlers(),
                 handler -> handler.isAddressBounded(address));
+    }
+    public Iterator<ExceptionHandler> getExceptionHandlersForCatchAddress(int address) {
+        return FilterIterator.of(getExceptionHandlers(),
+                handler -> handler.getCatchAddress() == address);
     }
     public Iterator<ExceptionHandler> getExceptionHandlers(){
         Iterator<ExceptionHandler> iterator1 = EmptyIterator.of();
@@ -457,6 +462,18 @@ public class TryItem extends FixedDexContainerWithTool implements
             catchAllHandler.fromSmali(smaliCodeCatchAll);
         }
         updateCount();
+    }
+
+    @Override
+    public boolean uses(Key key) {
+        Iterator<CatchTypedHandler> iterator = getCatchTypedHandlers();
+        while (iterator.hasNext()) {
+            TypeKey handler = iterator.next().getKey();
+            if (handler != null && handler.uses(key)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override

@@ -21,6 +21,7 @@ import com.reandroid.dex.common.RegisterFormat;
 import com.reandroid.dex.common.RegistersTable;
 import com.reandroid.dex.ins.Opcode;
 import com.reandroid.dex.key.Key;
+import com.reandroid.dex.key.MethodKey;
 import com.reandroid.dex.smali.SmaliParseException;
 import com.reandroid.dex.smali.SmaliReader;
 import com.reandroid.dex.smali.SmaliWriter;
@@ -152,6 +153,19 @@ public class SmaliInstruction extends SmaliCode{
 
     public Opcode<?> getOpcode() {
         return opcode;
+    }
+    public SmaliMethod getParentMethod() {
+        return getParentInstance(SmaliMethod.class);
+    }
+    public SmaliClass getParentClass() {
+        return getParentInstance(SmaliClass.class);
+    }
+    public MethodKey getKeyAsMethod() {
+        Key key = getKey();
+        if (key instanceof MethodKey) {
+            return (MethodKey) key;
+        }
+        return null;
     }
     public void initializeOpcode(Opcode<?> opcode) throws IOException {
         this.opcode = opcode;

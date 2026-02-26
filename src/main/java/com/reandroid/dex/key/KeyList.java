@@ -120,6 +120,30 @@ public abstract class KeyList<T extends Key> implements Key, Iterable<T> {
         result[length] = item;
         return newInstance(result);
     }
+    public KeyList<T> add(int index, T item) {
+        if (item == null) {
+            return this;
+        }
+        Key[] elements = this.elements;
+        int length = elements.length;
+        if (index > length) {
+            index = length;
+        }
+        length = length + 1;
+        Key[] result = newArray(length);
+        if (index < 0) {
+            index = 0;
+        }
+        for (int i = 0; i < index; i++) {
+            result[i] = elements[i];
+        }
+        result[index] = item;
+        index = index + 1;
+        for (int i = index; i < length; i++) {
+            result[i] = elements[i - 1];
+        }
+        return newInstance(result);
+    }
     public KeyList<T> remove(T itemKey) {
         return remove(indexOf(itemKey));
     }

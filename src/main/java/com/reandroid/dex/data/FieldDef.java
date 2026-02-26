@@ -138,6 +138,13 @@ public class FieldDef extends Def<FieldId> implements FieldProgram {
     }
     @Override
     public boolean uses(Key key) {
+        Key k = getKey();
+        if (key.equals(k)) {
+            return false;
+        }
+        if (k.uses(key)) {
+            return true;
+        }
         return key.equals(getStaticValue());
     }
     @Override

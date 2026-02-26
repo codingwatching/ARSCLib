@@ -20,6 +20,7 @@ import com.reandroid.arsc.io.BlockReader;
 import com.reandroid.common.ArraySupplier;
 import com.reandroid.dex.base.UsageMarker;
 import com.reandroid.dex.common.Modifier;
+import com.reandroid.dex.debug.DebugSequence;
 import com.reandroid.dex.id.IdItem;
 import com.reandroid.dex.id.MethodId;
 import com.reandroid.dex.id.ProtoId;
@@ -202,6 +203,26 @@ public class MethodDef extends Def<MethodId> implements MethodProgram {
     public DebugInfo getOrCreateDebugInfo() {
         return getOrCreateCodeItem().getOrCreateDebugInfo();
     }
+    public DebugSequence getDebugSequence() {
+        DebugInfo debugInfo = getDebugInfo();
+        if (debugInfo != null) {
+            return debugInfo.getDebugSequence();
+        }
+        return null;
+    }
+    public DebugSequence getOrCreateDebugSequence() {
+        return getOrCreateDebugInfo().getDebugSequence();
+    }
+    public boolean hasDebugInfo() {
+        return getDebugInfo() != null;
+    }
+    public boolean hasDebugSequence() {
+        DebugInfo debugInfo = getDebugInfo();
+        if (debugInfo != null) {
+            return debugInfo.hasSequence();
+        }
+        return false;
+    }
     public ProtoId getProtoId() {
         MethodId methodId = getId();
         if (methodId != null) {
@@ -356,6 +377,22 @@ public class MethodDef extends Def<MethodId> implements MethodProgram {
     }
 
     @Override
+    public boolean uses(Key key) {
+        Key k = getKey();
+        if (key.equals(k)) {
+            return false;
+        }
+        if (k.uses(key)) {
+            return true;
+        }
+        CodeItem codeItem = getCodeItem();
+        if (codeItem != null && codeItem.uses(key)) {
+            return true;
+        }
+        return false;
+    }
+
+    @Override
     public Iterator<IdItem> usedIds() {
         Iterator<IdItem> iterator;
         CodeItem codeItem = getCodeItem();
@@ -395,7 +432,7 @@ public class MethodDef extends Def<MethodId> implements MethodProgram {
                 MethodKey methodKey = smaliMethod.getKey();
                 throw new RuntimeException("Parameter out of range, class = " +
                         methodKey.getDeclaring() + ", method = " + methodKey.getName() +
-                        methodKey.getProto() + "\n" + smaliMethodParameter);
+                        methodKey.getType() + "\n" + smaliMethodParameter);
             }
             MethodParameterDef parameter = getParameter(index);
             parameter.fromSmali(smaliMethodParameter, false);

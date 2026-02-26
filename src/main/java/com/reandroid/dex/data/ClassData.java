@@ -325,6 +325,27 @@ public class ClassData extends DataItem implements SmaliFormat {
     }
 
     @Override
+    public boolean uses(Key key) {
+        DefArray<?> defArray = staticFields;
+        if (defArray != null && defArray.uses(key)) {
+            return true;
+        }
+        defArray = instanceFields;
+        if (defArray != null && defArray.uses(key)) {
+            return true;
+        }
+        defArray = directMethods;
+        if (defArray != null && defArray.uses(key)) {
+            return true;
+        }
+        defArray = virtualMethods;
+        if (defArray != null && defArray.uses(key)) {
+            return true;
+        }
+        return false;
+    }
+
+    @Override
     public Iterator<IdItem> usedIds() {
         return new IterableIterator<DefArray<?>, IdItem>(getDefArrays()) {
             @Override

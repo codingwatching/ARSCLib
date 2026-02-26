@@ -12,12 +12,13 @@ import java.io.IOException;
 import java.util.Iterator;
 import java.util.function.Predicate;
 
-public class ProtoKey implements Key {
+public class ProtoKey implements ProtoDescriptorKey {
 
     private final TypeListKey parameters;
     private final TypeKey returnType;
 
-    private ProtoKey(TypeListKey parameters, TypeKey returnType){
+    private ProtoKey(TypeListKey parameters, TypeKey returnType) {
+        super();
         this.parameters = parameters;
         this.returnType = returnType;
     }
@@ -71,16 +72,15 @@ public class ProtoKey implements Key {
         return create(getParameters(), typeKey);
     }
 
+    @Override
     public TypeKey getReturnType() {
         return returnType;
     }
-
-    public int getParametersCount() {
-        return getParameters().size();
-    }
+    @Override
     public TypeKey getParameter(int i){
         return getParameters().get(i);
     }
+    @Override
     public TypeListKey getParameters() {
         return parameters;
     }

@@ -28,16 +28,10 @@ import java.lang.annotation.ElementType;
 import java.lang.reflect.Field;
 import java.util.Iterator;
 
-public class FieldKey implements MemberKey {
-
-    private final TypeKey declaring;
-    private final StringKey name;
-    private final TypeKey type;
+public class FieldKey extends NamedTypeKey implements MemberKey {
 
     FieldKey(TypeKey declaring, StringKey name, TypeKey type) {
-        this.declaring = declaring;
-        this.name = name;
-        this.type = type;
+        super(declaring, name, type);
     }
 
     @Override
@@ -45,44 +39,36 @@ public class FieldKey implements MemberKey {
         return ElementType.FIELD;
     }
     @Override
-    public TypeKey getDeclaring() {
-        return declaring;
-    }
-    public StringKey getNameKey() {
-        return name;
-    }
-    @Override
     public String getName() {
         return getNameKey().getString();
     }
+    @Override
     public TypeKey getType() {
-        return type;
+        return (TypeKey) super.getType();
     }
 
     public FieldKey changeDeclaring(TypeKey typeKey) {
-        if (typeKey.equals(getDeclaring())) {
-            return this;
-        }
-        return create(typeKey, getNameKey(), getType());
+        return (FieldKey) super.changeDeclaring(typeKey);
     }
     @Override
     public FieldKey changeName(String name) {
-        if (name.equals(getName())) {
-            return this;
-        }
-        return create(getDeclaring(), name, getType());
+        return (FieldKey) super.changeName(name);
     }
+    @Override
     public FieldKey changeName(StringKey name) {
-        if (name.equals(getNameKey())) {
-            return this;
-        }
-        return create(getDeclaring(), name, getType());
+        return (FieldKey) super.changeName(name);
     }
-    public FieldKey changeType(TypeKey typeKey) {
-        if (typeKey.equals(getType())) {
-            return this;
+    @Override
+    public FieldKey changeType(TypeDescriptorKey type) {
+        return (FieldKey) super.changeType(type);
+    }
+
+    @Override
+    protected NamedTypeKey newInstance(TypeKey declaring, StringKey nameKey, TypeDescriptorKey type) {
+        if (declaring == null || !(type instanceof TypeKey)) {
+            return super.newInstance(declaring, nameKey, type);
         }
-        return create(getDeclaring(), getNameKey(), typeKey);
+        return FieldKey.create(declaring, nameKey, type);
     }
 
     @Override
@@ -230,14 +216,27 @@ public class FieldKey implements MemberKey {
     }
 
 
+    public static FieldKey create(TypeKey declaring, StringKey name, Key type) {
+        return create(declaring, name, (TypeKey) type);
+    }
     public static FieldKey create(TypeKey declaring, StringKey name, TypeKey type) {
         if (declaring == null || name == null || type == null) {
             return null;
         }
         return new FieldKey(declaring, name, type);
     }
+    public static FieldKey create(TypeKey declaring, String name, Key type) {
+        return create(declaring, name, (TypeKey) type);
+    }
     public static FieldKey create(TypeKey declaring, String name, TypeKey type) {
         return create(declaring, StringKey.create(name), type);
+    }
+    public static FieldKey create(TypeKey declaring, NamedTypeKey namedTypeKey) {
+        Key type = namedTypeKey.getType();
+        if (!(type instanceof TypeKey)) {
+            return null;
+        }
+        return create(declaring, namedTypeKey.getNameKey(), (TypeKey) type);
     }
 
     public static FieldKey parse(String text) {

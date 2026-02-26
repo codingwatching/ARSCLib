@@ -16,10 +16,15 @@
 package com.reandroid.dex.model;
 
 import com.reandroid.arsc.item.IntegerReference;
+import com.reandroid.arsc.item.LongReference;
 import com.reandroid.dex.common.Register;
 import com.reandroid.dex.common.RegisterFormat;
 import com.reandroid.dex.common.RegisterType;
 import com.reandroid.dex.data.InstructionList;
+import com.reandroid.dex.debug.DebugElement;
+import com.reandroid.dex.debug.DebugElementType;
+import com.reandroid.dex.debug.DebugLineNumber;
+import com.reandroid.dex.debug.DebugSequence;
 import com.reandroid.dex.id.FieldId;
 import com.reandroid.dex.id.IdItem;
 import com.reandroid.dex.id.MethodId;
@@ -192,6 +197,40 @@ public class DexInstruction extends DexCode {
             ((RegistersSet) ins).setRegister(i, register);
         }
     }
+    public void setRegisters(RegistersSet source) {
+        RegistersSet self;
+        Ins ins = getIns();
+        if (ins instanceof RegistersSet) {
+            self = (RegistersSet) ins;
+        } else {
+            return;
+        }
+        int count = source.getRegistersCount();
+        self.setRegistersCount(count);
+        for (int i = 0; i < count; i++) {
+            self.setRegister(i, source.getRegister(i));
+        }
+    }
+    public void setRegisters(DexInstruction source) {
+        Ins ins = source.getIns();
+        if (ins instanceof RegistersSet) {
+            setRegisters((RegistersSet) ins);
+        }
+    }
+    public int[] getRegisters() {
+        Ins ins = getIns();
+        if (ins instanceof RegistersSet) {
+            return ((RegistersSet) ins).getRegisters();
+        }
+        return null;
+    }
+    public void setRegisters(int[] registers) {
+        Ins ins = getIns();
+        if (ins instanceof RegistersSet) {
+            ((RegistersSet) ins).setRegisters(registers);
+        }
+    }
+
     public boolean removeRegisterAt(int index) {
         Ins ins = edit();
         if (ins instanceof RegistersSet) {
@@ -334,16 +373,75 @@ public class DexInstruction extends DexCode {
     }
     public Integer getAsInteger() {
         Ins ins = getIns();
-        if (ins instanceof ConstNumber) {
-            return ((ConstNumber) ins).get();
+        if (ins instanceof IntegerReference) {
+            return ((IntegerReference) ins).get();
         }
         return null;
     }
     public Long getAsLong() {
         Ins ins = getIns();
-        if (ins instanceof ConstNumberLong) {
-            return ((ConstNumberLong) ins).getLong();
+        if (ins instanceof LongReference) {
+            return ((LongReference) ins).getLong();
         }
+        return null;
+    }
+    public Object getAsConstValue() {
+        return getAsConstValue(null);
+    }
+    public Object getAsConstValue(TypeKey valueType) {
+        if (is(Opcode.CONST_CLASS)) {
+            return getKey();
+        }
+        if (isConstString()) {
+            if (valueType != null && valueType.isPrimitive()) {
+                return null;
+            }
+            return getString();
+        }
+        if (isConstInteger()) {
+            int value = getAsInteger();
+            if (valueType == null || TypeKey.TYPE_I.equals(valueType)) {
+                return value;
+            }
+            if (TypeKey.TYPE_B.equals(valueType)) {
+                return (byte) value;
+            }
+            if (TypeKey.TYPE_S.equals(valueType)) {
+                return (short) value;
+            }
+            if (TypeKey.TYPE_C.equals(valueType)) {
+                return (char) value;
+            }
+            if (TypeKey.TYPE_F.equals(valueType)) {
+                return Float.intBitsToFloat(value);
+            }
+            if (TypeKey.TYPE_Z.equals(valueType)) {
+                if (value == 1) {
+                    return true;
+                }
+                if (value == 0) {
+                    return false;
+                }
+                return null;
+            }
+            if (valueType.isPrimitive()) {
+                return value;
+            }
+            if (!valueType.isPrimitive() && value == 0) {
+                // TODO: make null value instead
+                return null;
+            }
+            // TODO
+            return null;
+        }
+        if (isConstWide()) {
+            long value = getAsLong();
+            if (TypeKey.TYPE_D.equals(valueType)) {
+                return Double.longBitsToDouble(value);
+            }
+            return value;
+        }
+        // TODO: confirm this is unreachable
         return null;
     }
     public void setAsInteger(int value) {
@@ -390,6 +488,9 @@ public class DexInstruction extends DexCode {
     }
     public DexInstruction createNext(Opcode<?> opcode) {
         return DexInstruction.create(getDexMethod(), edit().createNext(opcode));
+    }
+    public DexInstruction createNext(boolean shiftLabels, Opcode<?> opcode) {
+        return DexInstruction.create(getDexMethod(), edit().createNext(shiftLabels, opcode));
     }
     public DexInstruction createNext(SmaliInstruction smaliInstruction) {
         DexInstruction dexInstruction = createNext(smaliInstruction.getOpcode());
@@ -443,6 +544,18 @@ public class DexInstruction extends DexCode {
         }
         return lastInstruction;
     }
+    public DexInstruction removeSafe() {
+        if (safeToRemove()) {
+            if (!isRemoved()) {
+                removeSelf();
+            }
+            return null;
+        }
+        if (this.is(Opcode.NOP)) {
+            return this;
+        }
+        return replace(Opcode.NOP);
+    }
     @Override
     public void removeSelf() {
         Ins ins = edit();
@@ -493,6 +606,12 @@ public class DexInstruction extends DexCode {
         return ins;
     }
 
+    public SmaliInstruction toSmali() {
+        if (toString().contains(" Lkr/co/psynet/LiveScoreApplication;->getInstance()Lkr/co/psynet/LiveScoreApplication;")) {
+            String junk = "";
+        }
+        return getIns().toSmali();
+    }
     @Override
     public boolean uses(Key key) {
         Key insKey = getKey();
@@ -520,7 +639,14 @@ public class DexInstruction extends DexCode {
         return DexInstruction.create(getDexMethod(), getIns().getTargetIns());
     }
     public boolean hasTargetingInstructions() {
-        return getIns().getForcedExtraLines(Ins.class).hasNext();
+        Iterator<ExtraLine> iterator = getIns().getForcedExtraLines();
+        while (iterator.hasNext()) {
+            ExtraLine label = iterator.next();
+            if (!(label instanceof DebugElement)) {
+                return true;
+            }
+        }
+        return false;
     }
     public boolean hasTargetingInstructionsIfOpcode(Predicate<Opcode<?>> predicate) {
         return FilterIterator.of(getIns().getForcedExtraLines(Ins.class),
@@ -567,6 +693,79 @@ public class DexInstruction extends DexCode {
         }
         iterator = CollectionUtil.copyOfUniqueOf(iterator);
         return DexInstruction.createAll(getDexMethod(), iterator);
+    }
+    public Iterator<DexCatch> getTargetingCatches() {
+        int address = getAddress();
+        return new IterableIterator<DexTry, DexCatch>(getDexMethod().getDexTry()) {
+            @Override
+            public Iterator<? extends DexCatch> iterator(DexTry element) {
+                return element.getCatchesAt(address);
+            }
+        };
+    }
+    public int getLineNumber() {
+        if (getDexMethod().hasDebugSequence()) {
+            Integer line = lineNumber();
+            if (line != null) {
+                return line;
+            }
+            DexInstruction prev = getPrevious();
+            if (prev != null) {
+                return prev.getLineNumber();
+            }
+        }
+        return 0;
+    }
+    public Integer lineNumber() {
+        DebugLineNumber lineNumber = CollectionUtil.getLast(debugLineNumbers());
+        if (lineNumber != null) {
+            return lineNumber.getLineNumber();
+        }
+        return null;
+    }
+    public boolean hasLineNumber(int line) {
+        Iterator<DebugLineNumber> iterator = debugLineNumbers();
+        while (iterator.hasNext()) {
+            if (iterator.next().getLineNumber() == line) {
+                return true;
+            }
+        }
+        return false;
+    }
+    public Iterator<Integer> getLineNumbers() {
+        return ComputeIterator.of(debugLineNumbers(),
+                DebugLineNumber::getLineNumber);
+    }
+    public void setLineNumber(int line) {
+        Ins ins = edit();
+        DebugLineNumber lineNumber = CollectionUtil.getLast(debugLineNumbers());
+        if (lineNumber == null) {
+            DebugSequence debugSequence = getDexMethod().getDefinition().getOrCreateDebugSequence();
+            lineNumber = debugSequence.createNext(DebugElementType.LINE_NUMBER);
+            lineNumber.setTargetAddress(ins.getAddress());
+            lineNumber.setTargetIns(ins);
+        }
+        lineNumber.setLineNumber(line);
+    }
+    private Iterator<DebugLineNumber> debugLineNumbers() {
+        if (getDexMethod().hasDebugSequence()) {
+            return getIns().getForcedExtraLines(DebugLineNumber.class);
+        }
+        return EmptyIterator.of();
+    }
+    public boolean safeToRemove() {
+        if (isRemoved()) {
+            return true;
+        }
+        if (hasTargetingInstructions()) {
+            return false;
+        }
+        DexInstruction previous = getPrevious();
+        if (previous != null && previous.isIfTest()) {
+            DexInstruction next = getNext();
+            return next != null && previous.getTargetAddress() != next.getAddress();
+        }
+        return true;
     }
     public DexInstruction getNext() {
         return getDexMethod().getInstruction(getIndex() + 1);

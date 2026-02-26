@@ -27,22 +27,15 @@ import com.reandroid.utils.collection.SingleIterator;
 import java.io.IOException;
 import java.lang.annotation.ElementType;
 import java.lang.reflect.Method;
-import java.lang.reflect.Parameter;
+import java.lang.reflect.Type;
 import java.util.Iterator;
-import java.util.function.Function;
 
-public class MethodKey implements MemberKey {
+public class MethodKey extends NamedTypeKey implements MemberKey {
 
-    private final TypeKey declaring;
-    private final StringKey nameKey;
-    private final ProtoKey proto;
-
-    public MethodKey(TypeKey declaring, StringKey name, ProtoKey proto){
-        this.declaring = declaring;
-        this.nameKey = name;
-        this.proto = proto;
+    public MethodKey(TypeKey declaring, StringKey name, ProtoKey proto) {
+        super(declaring, name, proto);
     }
-    public MethodKey(TypeKey declaring, String name, ProtoKey proto){
+    private MethodKey(TypeKey declaring, String name, ProtoKey proto){
         this(declaring, StringKey.create(name), proto);
     }
 
@@ -52,60 +45,64 @@ public class MethodKey implements MemberKey {
     }
 
     public int getRegister(int index) {
-        return getProto().getRegister(index);
+        return getType().getRegister(index);
     }
     public int getParameterIndex(int index) {
-        return getProto().getParameterIndex(index);
+        return getType().getParameterIndex(index);
     }
-    public MethodKey changeDeclaring(TypeKey typeKey) {
-        if (getDeclaring().equals(typeKey)) {
-            return this;
-        }
-        return new MethodKey(typeKey, getNameKey(), getProto());
+
+    @Override
+    public MethodKey changeDeclaring(TypeKey declaring) {
+        return (MethodKey) super.changeDeclaring(declaring);
     }
     @Override
     public MethodKey changeName(String name) {
-        return changeName(StringKey.create(name));
-    }
-    public MethodKey changeName(StringKey name) {
-        if (name.equals(getNameKey())) {
-            return this;
-        }
-        return new MethodKey(getDeclaring(), name, getProto());
-    }
-    public MethodKey changeParameters(TypeListKey parameters) {
-        return changeProto(getProto().changeParameters(parameters));
-    }
-    public MethodKey changeParameter(int index, TypeKey parameter) {
-        return changeProto(getProto().changeParameter(index, parameter));
-    }
-    public MethodKey changeProto(ProtoKey protoKey) {
-        if (protoKey.equals(getProto())) {
-            return this;
-        }
-        return create(getDeclaring(), getNameKey(), protoKey);
-    }
-    public MethodKey changeReturnType(TypeKey typeKey) {
-        return changeProto(getProto().changeReturnType(typeKey));
-    }
-    public MethodKey removeParameter(int index) {
-        return changeProto(getProto().removeParameter(index));
+        return (MethodKey) super.changeName(name);
     }
     @Override
-    public TypeKey getDeclaring() {
-        return declaring;
+    public MethodKey changeName(StringKey name) {
+        return (MethodKey) super.changeName(name);
     }
-    public StringKey getNameKey() {
-        return nameKey;
+
+    public MethodKey changeParameters(TypeListKey parameters) {
+        return changeType(getType().changeParameters(parameters));
+    }
+    public MethodKey changeParameter(int index, TypeKey parameter) {
+        return changeType(getType().changeParameter(index, parameter));
+    }
+    public MethodKey changeProto(ProtoKey protoKey) {
+        return changeType(protoKey);
+    }
+    @Override
+    public MethodKey changeType(TypeDescriptorKey protoKey) {
+        return (MethodKey) super.changeType(protoKey);
+    }
+    @Override
+    protected NamedTypeKey newInstance(TypeKey declaring, StringKey nameKey, TypeDescriptorKey protoKey) {
+        if (declaring == null || !(protoKey instanceof ProtoKey)) {
+            return super.newInstance(declaring, nameKey, protoKey);
+        }
+        return MethodKey.create(declaring, nameKey, (ProtoKey) protoKey);
+    }
+    public MethodKey changeReturnType(TypeKey typeKey) {
+        return changeType(getType().changeReturnType(typeKey));
+    }
+    public MethodKey removeParameter(int index) {
+        return changeType(getType().removeParameter(index));
     }
     public ProtoKey getProto() {
-        return proto;
+        return getType();
     }
+    @Override
+    public ProtoKey getType() {
+        return (ProtoKey) super.getType();
+    }
+
     public TypeKey getReturnType() {
-        return getProto().getReturnType();
+        return getType().getReturnType();
     }
     public TypeListKey getParameters() {
-        return getProto().getParameters();
+        return getType().getParameters();
     }
     @Override
     public String getName() {
@@ -121,38 +118,18 @@ public class MethodKey implements MemberKey {
         return getParameters().get(i);
     }
     public int getParameterRegistersCount(){
-        return getProto().getParameterRegistersCount();
+        return getType().getParameterRegistersCount();
     }
     public boolean isObjectMethod() {
         return isObjectMethod(this);
     }
     @Override
     public Iterator<Key> contents() {
-        return CombiningIterator.singleTwo(
+        return CombiningIterator.singleThree(
                 MethodKey.this,
-                CombiningIterator.singleOne(getDeclaring(), SingleIterator.of(getNameKey())),
-                getProto().contents());
-    }
-
-    public MethodKey replaceTypes(Function<TypeKey, TypeKey> function) {
-        MethodKey result = this;
-        TypeKey typeKey = getDeclaring();
-        typeKey = typeKey.changeTypeName(function.apply(typeKey));
-
-        result = result.changeDeclaring(typeKey);
-
-        typeKey = getReturnType();
-        typeKey = typeKey.changeTypeName(function.apply(typeKey));
-
-        result = result.changeReturnType(typeKey);
-
-        int count = getParametersCount();
-        for(int i = 0; i < count; i++){
-            typeKey = getParameter(i);
-            typeKey = typeKey.changeTypeName(function.apply(typeKey));
-            result = result.changeParameter(i, typeKey);
-        }
-        return result;
+                SingleIterator.of(getDeclaring()),
+                SingleIterator.of(getNameKey()),
+                getType().contents());
     }
 
     @Override
@@ -162,7 +139,7 @@ public class MethodKey implements MemberKey {
             return (MethodKey) replace;
         }
         result = result.changeDeclaring(getDeclaring().replaceKey(search, replace));
-        result = result.changeProto(getProto().replaceKey(search, replace));
+        result = result.changeType(getType().replaceKey(search, replace));
         if (replace instanceof StringKey && search.equals(result.getNameKey())) {
             result = result.changeName((StringKey) replace);
         }
@@ -177,7 +154,7 @@ public class MethodKey implements MemberKey {
     }
     public void appendDefinition(SmaliWriter writer) throws IOException {
         getNameKey().appendSimpleName(writer);
-        getProto().append(writer);
+        getType().append(writer);
     }
 
     @Override
@@ -194,10 +171,10 @@ public class MethodKey implements MemberKey {
             return i;
         }
         i = CompareUtil.compare(getNameKey(), key.getNameKey());
-        if(i != 0) {
+        if (i != 0) {
             return i;
         }
-        return CompareUtil.compare(getProto(), key.getProto());
+        return CompareUtil.compare(getType(), key.getType());
     }
     public int compareTo(Object obj, boolean checkDefining) {
         if (obj == null) {
@@ -208,17 +185,17 @@ public class MethodKey implements MemberKey {
         }
         MethodKey key = (MethodKey) obj;
         int i;
-        if(checkDefining){
+        if (checkDefining){
             i = CompareUtil.compare(getDeclaring(), key.getDeclaring());
-            if(i != 0) {
+            if (i != 0) {
                 return i;
             }
         }
         i = CompareUtil.compare(getNameKey(), key.getNameKey());
-        if(i != 0) {
+        if (i != 0) {
             return i;
         }
-        return CompareUtil.compare(getProto(), key.getProto());
+        return CompareUtil.compare(getType(), key.getType());
     }
 
     public boolean equalsIgnoreDeclaring(MethodKey other) {
@@ -229,31 +206,31 @@ public class MethodKey implements MemberKey {
             return true;
         }
         return ObjectsUtil.equals(getNameKey(), other.getNameKey()) &&
-                ObjectsUtil.equals(getProto(), other.getProto());
+                ObjectsUtil.equals(getType(), other.getType());
     }
     public boolean equalsIgnoreReturnType(MethodKey other){
-        if(other == null) {
+        if (other == null) {
             return false;
         }
-        if(other == this) {
+        if (other == this) {
             return true;
         }
-        if(!ObjectsUtil.equals(getDeclaring(), other.getDeclaring())){
+        if (!ObjectsUtil.equals(getDeclaring(), other.getDeclaring())){
             return false;
         }
-        if(!ObjectsUtil.equals(getNameKey(), other.getNameKey())){
+        if (!ObjectsUtil.equals(getNameKey(), other.getNameKey())){
             return false;
         }
-        return getProto().equalsParameters(other.getProto());
+        return getType().equalsParameters(other.getType());
     }
     public boolean equalsNameAndParameters(MethodKey other){
-        if(other == null){
+        if (other == null){
             return false;
         }
-        if(other == this){
+        if (other == this){
             return true;
         }
-        if(!KeyUtil.matches(getName(), other.getName())){
+        if (!KeyUtil.matches(getName(), other.getName())){
             return false;
         }
         return TypeListKey.equalsIgnoreEmpty(getParameters(), other.getParameters());
@@ -265,16 +242,16 @@ public class MethodKey implements MemberKey {
         if (other == this) {
             return true;
         }
-        if(!ObjectsUtil.equals(getDeclaring(), other.getDeclaring())){
+        if (!ObjectsUtil.equals(getDeclaring(), other.getDeclaring())){
             return false;
         }
-        return ObjectsUtil.equals(getProto(), other.getProto());
+        return ObjectsUtil.equals(getType(), other.getType());
     }
     public boolean equalsName(MethodKey other) {
-        if(other == null){
+        if (other == null){
             return false;
         }
-        if(other == this){
+        if (other == this){
             return true;
         }
         return KeyUtil.matches(getName(), other.getName());
@@ -283,37 +260,37 @@ public class MethodKey implements MemberKey {
         return KeyUtil.matches(getName(), name);
     }
     public boolean equalsProto(MethodKey other){
-        if(other == null){
+        if (other == null){
             return false;
         }
-        if(other == this){
+        if (other == this){
             return true;
         }
-        return ObjectsUtil.equals(getProto(), other.getProto());
+        return ObjectsUtil.equals(getType(), other.getType());
     }
     public boolean equalsDeclaring(TypeKey declaring) {
         return ObjectsUtil.equals(getDeclaring(), declaring);
     }
     public boolean equalsDeclaring(MethodKey other) {
-        if(other == null) {
+        if (other == null) {
             return false;
         }
-        if(other == this) {
+        if (other == this) {
             return true;
         }
         return ObjectsUtil.equals(getDeclaring(), other.getDeclaring());
     }
     public boolean equalsReturnType(TypeKey returnType) {
-        return getProto().equalsReturnType(returnType);
+        return getType().equalsReturnType(returnType);
     }
     public boolean equalsReturnType(MethodKey other){
-        if(other == null) {
+        if (other == null) {
             return false;
         }
-        if(other == this){
+        if (other == this){
             return true;
         }
-        return getProto().equalsReturnType(other.getProto());
+        return getType().equalsReturnType(other.getType());
     }
     public boolean equals(Object obj, boolean checkDefining, boolean checkType) {
         if (this == obj) {
@@ -323,27 +300,26 @@ public class MethodKey implements MemberKey {
             return false;
         }
         MethodKey methodKey = (MethodKey) obj;
-        if(!ObjectsUtil.equals(getNameKey(), methodKey.getNameKey())){
+        if (!ObjectsUtil.equals(getNameKey(), methodKey.getNameKey())){
             return false;
         }
-        if(!TypeListKey.equalsIgnoreEmpty(getParameters(), methodKey.getParameters())) {
+        if (!TypeListKey.equalsIgnoreEmpty(getParameters(), methodKey.getParameters())) {
             return false;
         }
-        if(checkDefining){
-            if(!ObjectsUtil.equals(getDeclaring(), methodKey.getDeclaring())){
+        if (checkDefining){
+            if (!ObjectsUtil.equals(getDeclaring(), methodKey.getDeclaring())){
                 return false;
             }
         }
-        if(checkType){
+        if (checkType){
             return ObjectsUtil.equals(getReturnType(), methodKey.getReturnType());
         }
         return true;
     }
-
     public boolean equals(TypeKey declaring, StringKey name, ProtoKey proto) {
         return getDeclaring().equals(declaring) &&
                 getNameKey().equals(name) &&
-                getProto().equals(proto);
+                getType().equals(proto);
     }
     @Override
     public boolean equals(Object obj) {
@@ -356,15 +332,15 @@ public class MethodKey implements MemberKey {
         MethodKey methodKey = (MethodKey) obj;
         return ObjectsUtil.equals(getNameKey(), methodKey.getNameKey()) &&
                 ObjectsUtil.equals(getDeclaring(), methodKey.getDeclaring()) &&
-                ObjectsUtil.equals(getProto(), methodKey.getProto());
+                ObjectsUtil.equals(getType(), methodKey.getType());
     }
     @Override
     public int hashCode() {
-        return ObjectsUtil.hash(getDeclaring(), getNameKey(), getProto());
+        return ObjectsUtil.hash(getDeclaring(), getNameKey(), getType());
     }
     @Override
     public String toString() {
-        return getDeclaring() + "->" + getNameKey().getAsSimpleName() + getProto();
+        return getDeclaring() + "->" + getNameKey().getAsSimpleName() + getType();
     }
 
     public static MethodKey parse(String text) {
@@ -372,11 +348,11 @@ public class MethodKey implements MemberKey {
     }
 
     public static MethodKey parse(String text, int start) {
-        if(text.length() - start < 6 || (text.charAt(start) != 'L' && text.charAt(start) != '[')){
+        if (text.length() - start < 6 || (text.charAt(start) != 'L' && text.charAt(start) != '[')){
             return null;
         }
         int i = text.indexOf("->", start);
-        if(i < 0){
+        if (i < 0){
             return null;
         }
         TypeKey defining = TypeKey.parseBinaryType(text, start, i);
@@ -402,22 +378,28 @@ public class MethodKey implements MemberKey {
     }
     public static MethodKey convert(Method method) {
         TypeKey declaring = TypeKey.convert(method.getDeclaringClass());
-        TypeKey returnType = TypeKey.convert(method.getReturnType());
-        Parameter[] parameters = method.getParameters();
+        TypeKey returnType = TypeKey.convert(method.getGenericReturnType());
+        Type[] parameters = method.getGenericParameterTypes();
         int length = parameters.length;
         TypeKey[] typeKeys = new TypeKey[length];
         for (int i = 0; i < length; i++) {
-            typeKeys[i] = TypeKey.convert(parameters[i].getType());
+            typeKeys[i] = TypeKey.convert(parameters[i]);
         }
         ProtoKey protoKey = ProtoKey.create(returnType, typeKeys);
         return create(declaring, StringKey.create(method.getName()), protoKey);
     }
 
+    public static MethodKey create(TypeKey declaring, StringKey name, Key protoKey) {
+        return MethodKey.create(declaring, name, (ProtoKey) protoKey);
+    }
     public static MethodKey create(TypeKey declaring, StringKey name, ProtoKey protoKey) {
         if (declaring == null || name == null || protoKey == null) {
             return null;
         }
         return new MethodKey(declaring, name, protoKey);
+    }
+    public static MethodKey create(TypeKey declaring, String name, Key protoKey) {
+        return create(declaring, StringKey.create(name), (ProtoKey) protoKey);
     }
     public static MethodKey create(TypeKey declaring, String name, ProtoKey protoKey) {
         return create(declaring, StringKey.create(name), protoKey);

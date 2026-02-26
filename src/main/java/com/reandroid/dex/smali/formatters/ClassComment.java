@@ -77,7 +77,7 @@ public interface ClassComment extends SmaliComment {
                         dexClass.getExtending());
                 SmaliComment.writeDeclarationComment(
                         writer,
-                        "imflemented-by:",
+                        "implemented-by:",
                         dexClass.getImplementations());
             }
         }

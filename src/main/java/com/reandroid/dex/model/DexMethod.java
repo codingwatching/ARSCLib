@@ -273,6 +273,24 @@ public class DexMethod extends DexDeclaration implements MethodProgram, BlockRef
     public Iterator<DexInstruction> getInstructions() {
         return DexInstruction.createAll(this, getDefinition().getInstructions());
     }
+    public DexInstruction getInstructionWithLineNumber(int lineNumber) {
+        if (hasDebugSequence()) {
+            Iterator<DexInstruction> iterator = getInstructions();
+            while (iterator.hasNext()) {
+                DexInstruction instruction = iterator.next();
+                if (instruction.hasLineNumber(lineNumber)) {
+                    return instruction;
+                }
+            }
+        }
+        return null;
+    }
+    public Iterator<DexInstruction> getInstructionsWithLineNumber(int lineNumber) {
+        if (hasDebugSequence()) {
+            return FilterIterator.of(getInstructions(), ins -> ins.hasLineNumber(lineNumber));
+        }
+        return EmptyIterator.of();
+    }
 
     int getEditIndex() {
         return mEditIndex;
@@ -430,6 +448,12 @@ public class DexMethod extends DexDeclaration implements MethodProgram, BlockRef
     @Override
     public MethodDef getDefinition() {
         return methodDef;
+    }
+    public boolean hasDebugInfo() {
+        return getDefinition().hasDebugInfo();
+    }
+    public boolean hasDebugSequence() {
+        return getDefinition().hasDebugSequence();
     }
 
     @Override

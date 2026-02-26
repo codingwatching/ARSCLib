@@ -249,6 +249,10 @@ public class ClassId extends IdItem implements ClassProgram,
     }
 
     @Override
+    public Iterator<FieldDef> declaredFields() {
+        return CombiningIterator.two(getStaticFields(), getInstanceFields());
+    }
+    @Override
     public Iterator<FieldDef> getStaticFields() {
         ClassData classData = getClassData();
         if (classData != null) {
@@ -473,6 +477,29 @@ public class ClassId extends IdItem implements ClassProgram,
             classData.replaceKeys(search, replace);
         }
     }
+
+    @Override
+    public boolean uses(Key key) {
+        if (key == null || key.equals(getKey())) {
+            return false;
+        }
+        if (getSuperClassKey().uses(key)) {
+            return true;
+        }
+        if (getInterfacesKey().uses(key)) {
+            return true;
+        }
+        AnnotationsDirectory annotationsDirectory = getAnnotationsDirectory();
+        if (annotationsDirectory != null && annotationsDirectory.uses(key)) {
+            return true;
+        }
+        ClassData classData = getClassData();
+        if (classData != null && classData.uses(key)) {
+            return true;
+        }
+        return false;
+    }
+
     @Override
     public Iterator<IdItem> usedIds() {
         return listUsedIds().iterator();

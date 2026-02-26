@@ -346,11 +346,14 @@ public class InstructionList extends FixedBlockContainer implements
         return constNumber;
     }
     public<T1 extends Ins> T1 createAt(int index, Opcode<T1> opcode) {
-        if(index == getCount()) {
+        return createAt(true, index, opcode);
+    }
+    public<T1 extends Ins> T1 createAt(boolean shiftLabels, int index, Opcode<T1> opcode) {
+        if (index == getCount()) {
             return createNext(opcode);
         }
         T1 item = opcode.newInstance();
-        add(index, item);
+        add(shiftLabels, index, item);
         return item;
     }
     public<T1 extends Ins> T1 createNext(Opcode<T1> opcode) {
@@ -457,6 +460,15 @@ public class InstructionList extends FixedBlockContainer implements
         for(Ins ins : this) {
             ins.replaceKeys(search, replace);
         }
+    }
+    public boolean uses(Key key) {
+        int size = getCount();
+        for (int i = 0; i < size; i++) {
+            if (get(i).uses(key)) {
+                return true;
+            }
+        }
+        return false;
     }
     public Iterator<IdItem> usedIds() {
         return new IterableIterator<Ins, IdItem>(iterator()) {

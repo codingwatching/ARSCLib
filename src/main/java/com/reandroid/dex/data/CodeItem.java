@@ -267,6 +267,15 @@ public class CodeItem extends DataItem implements RegistersTable,
     }
 
     @Override
+    public boolean uses(Key key) {
+        TryBlock tryBlock = getTryBlock();
+        if (tryBlock != null && tryBlock.uses(key)) {
+            return true;
+        }
+        return getInstructionList().uses(key);
+    }
+
+    @Override
     public Iterator<IdItem> usedIds(){
         DebugInfo debugInfo = getDebugInfo();
         Iterator<IdItem> iterator1;

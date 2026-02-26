@@ -132,6 +132,13 @@ public class Ins extends FixedDexContainerWithTool implements SmaliFormat {
         }
         return instructionList.createAt(getIndex() + 1, opcode);
     }
+    public<T1 extends Ins> T1 createNext(boolean shiftLabels, Opcode<T1> opcode) {
+        InstructionList instructionList = getInstructionList();
+        if (instructionList == null) {
+            throw new DexException("Parent " + getClass().getSimpleName() + " == null");
+        }
+        return instructionList.createAt(shiftLabels, getIndex() + 1, opcode);
+    }
     public void moveTo(int index){
         InstructionList instructionList = getInstructionList();
         if(instructionList == null){
@@ -283,6 +290,9 @@ public class Ins extends FixedDexContainerWithTool implements SmaliFormat {
 
     public void replaceKeys(Key search, Key replace){
 
+    }
+    public boolean uses(Key key) {
+        return false;
     }
     public Iterator<IdItem> usedIds(){
         return EmptyIterator.of();

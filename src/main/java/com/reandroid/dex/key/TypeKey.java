@@ -27,10 +27,11 @@ import com.reandroid.utils.collection.SingleIterator;
 
 import java.io.IOException;
 import java.lang.annotation.ElementType;
+import java.lang.reflect.Type;
 import java.util.Iterator;
 import java.util.function.Predicate;
 
-public class TypeKey implements ProgramKey {
+public class TypeKey implements TypeDescriptorKey, ProgramKey {
 
     private final String typeName;
     private String simpleName;
@@ -47,6 +48,25 @@ public class TypeKey implements ProgramKey {
 
     public String getTypeName() {
         return typeName;
+    }
+    public boolean isClassDefinition() {
+        String name = getTypeName();
+        int length = name.length() - 1;
+        return length >= 2 && name.charAt(0) == 'L' && name.charAt(length) == ';';
+    }
+    public String getBinaryName() {
+        String name = getTypeName();
+        int length = name.length() - 1;
+        if (length < 2 || name.charAt(length) != ';' || name.charAt(0) != 'L') {
+            return name;
+        }
+        return name.substring(1, length);
+    }
+    public String getJarClassPath() {
+        if (isTypeArray()) {
+            return getDeclaring().getJarClassPath();
+        }
+        return getBinaryName() + ".class";
     }
     public char shorty() {
         String name = getTypeName();
@@ -103,8 +123,7 @@ public class TypeKey implements ProgramKey {
     }
 
     public String getSourceName() {
-        int array = getArrayDimension();
-        if (array == 0) {
+        if (!isTypeArray()) {
             String type = getTypeName();
             if (type.length() == 1) {
                 TypeKey typeKey = PrimitiveTypeKey.primitiveType(type.charAt(0));
@@ -114,12 +133,7 @@ public class TypeKey implements ProgramKey {
             }
             return DexUtils.toSourceName(type);
         }
-        StringBuilder builder = new StringBuilder();
-        for (int i = 0; i < array; i++) {
-            builder.append("[");
-        }
-        builder.append(getDeclaring().getSourceName());
-        return builder.toString();
+        return getTypeName().replace('/', '.');
     }
     @Override
     public TypeKey getDeclaring() {
@@ -193,16 +207,34 @@ public class TypeKey implements ProgramKey {
         String name = getTypeName();
         return name.length() > 1 && name.charAt(0) == '[';
     }
-    public boolean isTypeDefinition() {
-        String name = getTypeName();
-        int i = name.length() - 1;
-        return i > 1 && name.charAt(0) == 'L' && name.charAt(i) == ';';
-    }
     public boolean isTypeObject() {
         return DexUtils.isTypeObject(getTypeName());
     }
     public boolean isPrimitive() {
-        return DexUtils.isPrimitive(getTypeName());
+        String name = getTypeName();
+        if (name.length() != 1) {
+            return false;
+        }
+        return isPrimitive(name.charAt(0));
+    }
+    public boolean isPrimitiveArray() {
+        String name = getTypeName();
+        int length = name.length();
+        if (length < 2 || name.charAt(0) != '[') {
+            return false;
+        }
+        for (int i = 1; i < length; i++) {
+            char c = name.charAt(i);
+            if (c == '[') {
+                continue;
+            }
+            i ++;
+            return i == length && isPrimitive(c);
+        }
+        return false;
+    }
+    public boolean isPrimitiveComponent() {
+        return isPrimitive() || isPrimitiveArray();
     }
     public boolean isWide() {
         String name = getTypeName();
@@ -303,7 +335,7 @@ public class TypeKey implements ProgramKey {
         if (postFix == ';' || postFix == '<') {
             builder.append(postFix);
         }
-        TypeKey typeKey = new TypeKey(builder.toString());
+        TypeKey typeKey = getOrCreate(builder.toString());
         return typeKey.setArrayDimension(getArrayDimension());
     }
     public boolean isPackage(String packageName) {
@@ -393,7 +425,7 @@ public class TypeKey implements ProgramKey {
         if (type.equals(parent)) {
             return this;
         }
-        return new TypeKey(parent);
+        return getOrCreate(parent);
     }
     public TypeKey createInnerClass(String simpleName) {
         String type = getTypeName();
@@ -510,9 +542,21 @@ public class TypeKey implements ProgramKey {
         if (name.indexOf('/') > 0 ||
                 name.indexOf(';') > 0 ||
                 name.charAt(0) == '[') {
-            return new TypeKey(name.replace('.', '/'));
+            return getOrCreate(name.replace('.', '/'));
         }
         return parseSourceName(name);
+    }
+    public static TypeKey fromClassPath(String path) {
+        if (path == null || path.length() == 0) {
+            return null;
+        }
+        String ext = ".class";
+        int length = path.length();
+        int extLength = ext.length();
+        if (length <= extLength || !path.endsWith(ext) || path.charAt(0) == '[') {
+            return null;
+        }
+        return getOrCreate('L' + path.substring(1, length - extLength) + ';');
     }
     private static TypeKey parseSourceName(String name) {
         int length = name.length();
@@ -533,22 +577,65 @@ public class TypeKey implements ProgramKey {
         if (arrayDimension != 0) {
             name = name.substring(0, length);
         }
-        TypeKey typeKey = primitiveType(name);
+        TypeKey typeKey = primitiveSourceType(name);
         if (typeKey == null) {
             name = name.replace('.', '/');
-            typeKey = new TypeKey('L' + name + ';');
+            typeKey = getOrCreate('L' + name + ';');
         }
         return typeKey.setArrayDimension(arrayDimension);
     }
     public static TypeKey convert(Class<?> type) {
         String name = type.getName();
         if (type.isArray()) {
-            return new TypeKey(name.replace('.', '/'));
+            return create(name.replace('.', '/'));
         }
         if (type.isPrimitive()) {
-            return primitiveType(name);
+            return primitiveSourceType(name);
         }
-        return new TypeKey('L' + name.replace('.', '/') + ';');
+        return getOrCreate('L' + name.replace('.', '/') + ';');
+    }
+    public static TypeKey convert(Type type) {
+        if (type instanceof Class<?>) {
+            return convert((Class<?>) type);
+        }
+        String name = dropSourceSignatures(type.getTypeName());
+        if (name.charAt(0) == '[') {
+            return create(name.replace('.', '/'));
+        }
+        // e.g. java.lang.Class[]
+        int i = name.indexOf('[');
+        int array = 0;
+        if (i > 0) {
+            array = StringsUtil.countChar(name, '[');
+            name = name.substring(0, i);
+        }
+        TypeKey typeKey = primitiveSourceType(name);
+        if (typeKey == null) {
+            typeKey = getOrCreate('L' + name.replace('.', '/') + ';');
+        }
+        if (array != 0 && typeKey != null) {
+            typeKey = typeKey.setArrayDimension(array);
+        }
+        return typeKey;
+    }
+    private static String dropSourceSignatures(String sourceTypeName) {
+        if (sourceTypeName.indexOf('<') < 0) {
+            return sourceTypeName;
+        }
+        int length = sourceTypeName.length();
+        StringBuilder builder = new StringBuilder(length);
+        int depth = 0;
+        for (int i = 0; i < length; i++) {
+            char c = sourceTypeName.charAt(i);
+            if (c == '<') {
+                depth ++;
+            } else if (c == '>') {
+                depth --;
+            } else if (depth == 0) {
+                builder.append(c);
+            }
+        }
+        return builder.toString();
     }
 
     /**
@@ -587,7 +674,7 @@ public class TypeKey implements ProgramKey {
         }
         // TODO: check here for invalid characters
 
-        return new TypeKey(typeName);
+        return getOrCreate(typeName);
     }
 
     /**
@@ -602,7 +689,7 @@ public class TypeKey implements ProgramKey {
             return null;
         }
         if (length != 1) {
-            return new TypeKey(typeName);
+            return getOrCreate(typeName);
         }
         return primitiveType(typeName.charAt(0));
     }
@@ -629,7 +716,10 @@ public class TypeKey implements ProgramKey {
             if (typeKey == null) {
                 throw new SmaliParseException("Invalid type name", reader);
             }
-            typeKey = new TypeKey(reader.readString(arrayLength + 1));
+            reader.skip(arrayLength + 1);
+            if (arrayLength != 0) {
+                typeKey = typeKey.setArrayDimension(arrayLength);
+            }
             return typeKey;
         }
         int i = reader.indexOfBeforeLineEnd(';');
@@ -641,7 +731,7 @@ public class TypeKey implements ProgramKey {
             throw new SmaliParseException("Invalid type nameXX", reader);
         }
         // TODO: support white space name for dex V040+
-        return new TypeKey(reader.readString(length));
+        return getOrCreate(reader.readString(length));
     }
 
     static TypeKey parseBinaryType(String text, int start, int end) {
@@ -673,6 +763,25 @@ public class TypeKey implements ProgramKey {
         }
         return null;
     }
+    private static TypeKey getOrCreate(String name) {
+        if ("Ljava/lang/Object;".equals(name)) {
+            String junk = "";
+        }
+        int length = name.length();
+        //Ljava/lang/Exception;
+        if (length > 12  && length < 22 && name.charAt(1) == 'j') {
+            if (name.equals("Ljava/lang/Object;")) {
+                return OBJECT;
+            }
+            if (name.equals("Ljava/lang/String;")) {
+                return STRING;
+            }
+            if (name.equals("Ljava/lang/Exception;")) {
+                return EXCEPTION;
+            }
+        }
+        return new TypeKey(name);
+    }
 
     public static boolean isPrimitive(char ch) {
         return primitiveType(ch) != null;
@@ -701,7 +810,7 @@ public class TypeKey implements ProgramKey {
                 return null;
         }
     }
-    private static TypeKey primitiveType(String sourceName) {
+    private static TypeKey primitiveSourceType(String sourceName) {
         int length = sourceName.length();
         // int = 3, boolean = 7
         if (length < 3 || length > 7) {
@@ -744,6 +853,14 @@ public class TypeKey implements ProgramKey {
         }
 
         @Override
+        public String getBinaryName() {
+            return getTypeName();
+        }
+        @Override
+        public boolean isClassDefinition() {
+            return false;
+        }
+        @Override
         public boolean uses(Key key) {
             return equals(key);
         }
@@ -760,6 +877,14 @@ public class TypeKey implements ProgramKey {
             return true;
         }
         @Override
+        public boolean isPrimitiveArray() {
+            return false;
+        }
+        @Override
+        public boolean isPrimitiveComponent() {
+            return true;
+        }
+        @Override
         public boolean isWide() {
             return false;
         }
@@ -772,11 +897,11 @@ public class TypeKey implements ProgramKey {
             return false;
         }
         @Override
-        public boolean isTypeDefinition() {
+        public boolean isOuterOf(TypeKey typeKey, boolean immediate) {
             return false;
         }
         @Override
-        public boolean isOuterOf(TypeKey typeKey, boolean immediate) {
+        public boolean isOuterOf(TypeKey typeKey) {
             return false;
         }
 

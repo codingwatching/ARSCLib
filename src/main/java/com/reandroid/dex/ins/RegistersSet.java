@@ -63,6 +63,32 @@ public interface RegistersSet {
         return true;
     }
 
+    default int[] getRegisters() {
+        int count = getRegistersCount();
+        int[] results;
+        if (count == 0) {
+            results = null;
+        } else {
+            results = new int[count];
+        }
+        for (int i = 0; i < count; i++) {
+            results[i] = getRegister(i);
+        }
+        return results;
+    }
+    default void setRegisters(int[] registers) {
+        int length;
+        if (registers == null) {
+            length = 0;
+        } else {
+            length = registers.length;
+        }
+        setRegistersCount(length);
+        for (int i = 0; i < length; i++) {
+            setRegister(i, registers[i]);
+        }
+    }
+
     RegistersSet NO_REGISTERS = new RegistersSet() {
         @Override
         public int getRegistersCount() {

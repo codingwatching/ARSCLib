@@ -1242,15 +1242,91 @@ public class Opcode<T extends Ins> implements BlockCreator<T>, SmaliFormat {
         return CONST_WIDE;
     }
     public static Opcode<?> getReturnForType(TypeKey typeKey) {
-        if (!typeKey.isPrimitive()) {
-            return RETURN_OBJECT;
-        }
         if (TypeKey.TYPE_V.equals(typeKey)) {
             return RETURN_VOID;
+        }
+        if (!typeKey.isPrimitive()) {
+            return RETURN_OBJECT;
         }
         if (typeKey.isWide()) {
             return RETURN_WIDE;
         }
         return RETURN;
+    }
+    public static Opcode<?> getMoveResultForType(TypeKey typeKey) {
+        if (TypeKey.TYPE_V.equals(typeKey)) {
+            return null;
+        }
+        if (!typeKey.isPrimitive()) {
+            return MOVE_RESULT_OBJECT;
+        }
+        if (typeKey.isWide()) {
+            return MOVE_RESULT_WIDE;
+        }
+        return MOVE_RESULT;
+    }
+    public static Opcode<?> getMoveForType(TypeKey typeKey, int r1, int r2) {
+        if (r1 > 0xff) {
+            return getMove16ForType(typeKey);
+        }
+        if (r1 > 0xf || r2 > 0xf) {
+            return getMoveFrom16ForType(typeKey);
+        }
+        return getMoveForType(typeKey);
+    }
+    public static Opcode<?> getMoveForType(TypeKey typeKey) {
+        if (TypeKey.TYPE_V.equals(typeKey)) {
+            return null;
+        }
+        if (!typeKey.isPrimitive()) {
+            return MOVE_OBJECT;
+        }
+        if (typeKey.isWide()) {
+            return MOVE_WIDE;
+        }
+        return MOVE;
+    }
+    public static Opcode<?> getMoveFrom16ForType(TypeKey typeKey) {
+        if (TypeKey.TYPE_V.equals(typeKey)) {
+            return null;
+        }
+        if (!typeKey.isPrimitive()) {
+            return MOVE_OBJECT_FROM16;
+        }
+        if (typeKey.isWide()) {
+            return MOVE_WIDE_FROM16;
+        }
+        return MOVE_FROM16;
+    }
+    public static Opcode<?> getMove16ForType(TypeKey typeKey) {
+        if (TypeKey.TYPE_V.equals(typeKey)) {
+            return null;
+        }
+        if (!typeKey.isPrimitive()) {
+            return MOVE_OBJECT_16;
+        }
+        if (typeKey.isWide()) {
+            return MOVE_WIDE_16;
+        }
+        return MOVE_16;
+    }
+
+    public static TypeKey typeOfArrayOperation(Opcode<?> arrayOpcode) {
+        if (arrayOpcode == Opcode.AGET_BYTE || arrayOpcode == Opcode.APUT_BYTE) {
+            return TypeKey.TYPE_B;
+        }
+        if (arrayOpcode == Opcode.AGET_CHAR || arrayOpcode == Opcode.APUT_CHAR) {
+            return TypeKey.TYPE_C;
+        }
+        if (arrayOpcode == Opcode.AGET_BOOLEAN || arrayOpcode == Opcode.APUT_BOOLEAN) {
+            return TypeKey.TYPE_Z;
+        }
+        if (arrayOpcode == Opcode.AGET || arrayOpcode == Opcode.APUT) {
+            return TypeKey.TYPE_I;
+        }
+        if (arrayOpcode == Opcode.AGET_WIDE || arrayOpcode == Opcode.APUT_WIDE) {
+            return TypeKey.TYPE_J;
+        }
+        return TypeKey.OBJECT;
     }
 }

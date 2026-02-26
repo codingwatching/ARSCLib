@@ -42,7 +42,7 @@ public interface MethodProgram extends MemberProgram {
     default ProtoKey getProtoKey() {
         MethodKey key = getKey();
         if (key != null) {
-            return key.getProto();
+            return key.getType();
         }
         return null;
     }

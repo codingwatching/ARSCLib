@@ -23,11 +23,14 @@ import com.reandroid.dex.common.EditableItem;
 import com.reandroid.dex.common.HiddenApiFlag;
 import com.reandroid.dex.common.IdDefinition;
 import com.reandroid.dex.common.IdUsageIterator;
-import com.reandroid.dex.common.Modifier;
 import com.reandroid.dex.common.SectionTool;
 import com.reandroid.dex.id.ClassId;
 import com.reandroid.dex.id.IdItem;
-import com.reandroid.dex.key.*;
+import com.reandroid.dex.key.AnnotationItemKey;
+import com.reandroid.dex.key.AnnotationSetKey;
+import com.reandroid.dex.key.Key;
+import com.reandroid.dex.key.MemberKey;
+import com.reandroid.dex.key.TypeKey;
 import com.reandroid.dex.pool.DexSectionPool;
 import com.reandroid.dex.program.MemberProgram;
 import com.reandroid.dex.sections.Section;
@@ -36,7 +39,6 @@ import com.reandroid.dex.sections.SectionType;
 import com.reandroid.dex.smali.SmaliRegion;
 import com.reandroid.dex.smali.model.Smali;
 import com.reandroid.dex.smali.model.SmaliDef;
-import com.reandroid.utils.collection.CombiningIterator;
 import com.reandroid.utils.collection.EmptyIterator;
 import com.reandroid.utils.collection.SingleIterator;
 
@@ -376,6 +378,15 @@ public abstract class Def<T extends IdItem> extends FixedDexContainerWithTool im
     @Override
     public void editInternal(Block user) {
 
+    }
+
+    @Override
+    public boolean uses(Key key) {
+        Key k = getKey();
+        if (key.equals(k)) {
+            return false;
+        }
+        return k.uses(key);
     }
 
     public Iterator<IdItem> usedIds() {

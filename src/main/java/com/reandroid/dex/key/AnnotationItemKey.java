@@ -352,8 +352,13 @@ public class AnnotationItemKey extends KeyList<AnnotationElementKey> implements 
         }
         return false;
     }
-    public static AnnotationItemKey parse(String text) {
-        //FIXME
-        throw new RuntimeException("AnnotationItemKey.parse not implemented");
+    public static AnnotationItemKey parse(String annotationString) {
+        if (annotationString != null) {
+            try {
+                return read(SmaliReader.of(annotationString));
+            } catch (IOException ignored) {
+            }
+        }
+        return null;
     }
 }

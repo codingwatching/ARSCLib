@@ -285,6 +285,22 @@ public class SizeXIns extends Ins {
             setKey(key2);
         }
     }
+
+    @Override
+    public boolean uses(Key key) {
+        if (key == null) {
+            return false;
+        }
+        Key k = getKey();
+        if (k == null) {
+            return false;
+        }
+        if (key.equals(k)) {
+            return true;
+        }
+        return k.uses(key);
+    }
+
     @Override
     public Iterator<IdItem> usedIds(){
         return SingleIterator.of(getSectionId());
@@ -420,9 +436,12 @@ public class SizeXIns extends Ins {
             return;
         }
         RegistersIterator registersIterator = getRegistersIterator();
+        int size = registersIterator.size();
+        if (size == 0) {
+            return;
+        }
         RegisterReference ref = registersIterator.get(0);
         smaliRegisterSet.addRegister(ref.isParameter(), ref.getNumber());
-        int size = registersIterator.size();
         int start = 1;
         if (registerFormat.isRange()) {
             start = size - 1;

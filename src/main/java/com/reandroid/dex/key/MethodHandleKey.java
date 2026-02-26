@@ -22,6 +22,7 @@ import com.reandroid.dex.smali.SmaliWriter;
 import com.reandroid.utils.CompareUtil;
 import com.reandroid.utils.ObjectsUtil;
 import com.reandroid.utils.StringsUtil;
+import com.reandroid.utils.collection.CombiningIterator;
 
 import java.io.IOException;
 import java.util.Iterator;
@@ -42,6 +43,12 @@ public class MethodHandleKey implements Key{
     public Key getMember() {
         return member;
     }
+    public MethodHandleKey changeMember(Key member) {
+        if (getMember().equals(member)) {
+            return this;
+        }
+        return create(getHandleType(), member);
+    }
 
     @Override
     public TypeKey getDeclaring() {
@@ -50,19 +57,18 @@ public class MethodHandleKey implements Key{
 
     @Override
     public Iterator<? extends Key> contents() {
-        return getMember().contents();
+        return CombiningIterator.singleOne(this,
+                getMember().contents());
     }
 
     @Override
-    public Key replaceKey(Key search, Key replace) {
-        if(search.equals(this)){
-            return replace;
+    public MethodHandleKey replaceKey(Key search, Key replace) {
+        MethodHandleKey result = this;
+        if(result.equals(search)){
+            return (MethodHandleKey) replace;
         }
-        Key key = getMember().replaceKey(search, replace);
-        if(key != getMember()){
-            return new MethodHandleKey(getHandleType(), key);
-        }
-        return this;
+        result = result.changeMember(getMember().replaceKey(search, replace));
+        return result;
     }
 
     @Override
