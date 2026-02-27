@@ -20,9 +20,12 @@ import com.reandroid.arsc.base.BlockRefresh;
 import com.reandroid.arsc.item.IndirectInteger;
 import com.reandroid.arsc.io.BlockReader;
 import com.reandroid.arsc.item.IntegerReference;
-import com.reandroid.dex.base.*;
+import com.reandroid.dex.base.DexPositionAlign;
+import com.reandroid.dex.base.IndirectShort;
+import com.reandroid.dex.base.PositionAlignedItem;
+import com.reandroid.dex.base.UsageMarker;
 import com.reandroid.dex.common.SectionItem;
-import com.reandroid.dex.debug.DebugElement;
+import com.reandroid.dex.debug.DebugElementBlock;
 import com.reandroid.dex.id.IdItem;
 import com.reandroid.dex.ins.ExtraLine;
 import com.reandroid.dex.ins.Label;
@@ -121,7 +124,7 @@ public class CodeItem extends DataItem implements RegistersTable,
     }
 
 
-    public Iterator<DebugElement> getDebugLabels() {
+    public Iterator<DebugElementBlock> getDebugLabels() {
         DebugInfo debugInfo = getDebugInfo();
         if(debugInfo != null) {
             return debugInfo.getExtraLines();

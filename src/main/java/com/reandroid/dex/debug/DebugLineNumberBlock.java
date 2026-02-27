@@ -23,9 +23,9 @@ import com.reandroid.utils.CompareUtil;
 
 import java.io.IOException;
 
-public class DebugLineNumber extends DebugElement {
+public class DebugLineNumberBlock extends DebugElementBlock {
 
-    public DebugLineNumber() {
+    public DebugLineNumberBlock() {
         super(DebugElementType.LINE_NUMBER);
     }
 
@@ -82,11 +82,11 @@ public class DebugLineNumber extends DebugElement {
             return 0;
         }
         for(int i = index - 1; i >=0; i--){
-            DebugElement element = debugSequence.get(i);
-            if(!(element instanceof DebugLineNumber)){
+            DebugElementBlock element = debugSequence.get(i);
+            if(!(element instanceof DebugLineNumberBlock)){
                 continue;
             }
-            DebugLineNumber lineNumber = (DebugLineNumber) element;
+            DebugLineNumberBlock lineNumber = (DebugLineNumberBlock) element;
             return lineNumber.getLineNumber();
         }
         return 0;
@@ -129,7 +129,7 @@ public class DebugLineNumber extends DebugElement {
     private DebugAdvanceLine getAdvanceLine(){
         DebugSequence debugSequence = getDebugSequence();
         if(debugSequence != null){
-            DebugElement element = debugSequence.get(getIndex() - 1);
+            DebugElementBlock element = debugSequence.get(getIndex() - 1);
             if(element instanceof DebugAdvancePc){
                 element = debugSequence.get(element.getIndex() - 1);
             }
@@ -144,11 +144,11 @@ public class DebugLineNumber extends DebugElement {
         if(obj == this){
             return true;
         }
-        if(!(obj instanceof DebugLineNumber)){
+        if(!(obj instanceof DebugLineNumberBlock)){
             return false;
         }
-        DebugLineNumber debugLineNumber = (DebugLineNumber) obj;
-        return getTargetAddress() == debugLineNumber.getTargetAddress();
+        DebugLineNumberBlock debugLineNumberBlock = (DebugLineNumberBlock) obj;
+        return getTargetAddress() == debugLineNumberBlock.getTargetAddress();
     }
 
     @Override
@@ -170,7 +170,7 @@ public class DebugLineNumber extends DebugElement {
         }
     }
     @Override
-    public DebugElementType<DebugLineNumber> getElementType() {
+    public DebugElementType<DebugLineNumberBlock> getElementType() {
         return DebugElementType.LINE_NUMBER;
     }
 
@@ -184,7 +184,7 @@ public class DebugLineNumber extends DebugElement {
     }
 
     @Override
-    int compareDetailElement(DebugElement element) {
+    int compareDetailElement(DebugElementBlock element) {
         return CompareUtil.compare(getLineNumber(), element.getLineNumber());
     }
 
@@ -201,7 +201,7 @@ public class DebugLineNumber extends DebugElement {
         if (obj == null || obj.getClass() != this.getClass()) {
             return false;
         }
-        DebugLineNumber lineNumber = (DebugLineNumber) obj;
+        DebugLineNumberBlock lineNumber = (DebugLineNumberBlock) obj;
         return this.getLineNumber() == lineNumber.getLineNumber() &&
                 this.getTargetAddress() == lineNumber.getTargetAddress();
     }

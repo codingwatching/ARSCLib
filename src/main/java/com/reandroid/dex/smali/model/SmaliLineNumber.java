@@ -16,7 +16,7 @@
 package com.reandroid.dex.smali.model;
 
 import com.reandroid.dex.debug.DebugElementType;
-import com.reandroid.dex.debug.DebugLineNumber;
+import com.reandroid.dex.debug.DebugLineNumberBlock;
 import com.reandroid.dex.smali.*;
 
 import java.io.IOException;
@@ -37,7 +37,7 @@ public class SmaliLineNumber extends SmaliDebugElement implements SmaliRegion {
     }
 
     @Override
-    public DebugElementType<DebugLineNumber> getDebugElementType() {
+    public DebugElementType<DebugLineNumberBlock> getDebugElementType() {
         return DebugElementType.LINE_NUMBER;
     }
 

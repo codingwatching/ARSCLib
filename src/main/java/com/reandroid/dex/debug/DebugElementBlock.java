@@ -32,14 +32,14 @@ import com.reandroid.utils.collection.EmptyIterator;
 import java.io.IOException;
 import java.util.Iterator;
 
-public abstract class DebugElement extends FixedDexContainerWithTool implements ExtraLine {
+public abstract class DebugElementBlock extends FixedDexContainerWithTool implements ExtraLine {
     
     private final ByteItem elementType;
     private int address;
     private int lineNumber;
     private Ins targetIns;
 
-    DebugElement(int childesCount, int flag) {
+    DebugElementBlock(int childesCount, int flag) {
         super(childesCount + 1);
 
         this.elementType = new ByteItem();
@@ -47,10 +47,10 @@ public abstract class DebugElement extends FixedDexContainerWithTool implements 
 
         addChild(0, elementType);
     }
-    DebugElement(int childesCount, DebugElementType<?> elementType) {
+    DebugElementBlock(int childesCount, DebugElementType<?> elementType) {
         this(childesCount, elementType.getFlag());
     }
-    DebugElement(DebugElementType<?> elementType) {
+    DebugElementBlock(DebugElementType<?> elementType) {
         this(0, elementType.getFlag());
     }
 
@@ -116,7 +116,7 @@ public abstract class DebugElement extends FixedDexContainerWithTool implements 
     }
     @Override
     public void setTargetAddress(int address) {
-        DebugElement element = this;
+        DebugElementBlock element = this;
         while (element.updateTargetAddress(address)) {
             element = element.getNext();
             if (element == null) {
@@ -129,7 +129,7 @@ public abstract class DebugElement extends FixedDexContainerWithTool implements 
         if (address == getTargetAddress()) {
             return false;
         }
-        DebugElement previous = getPrevious();
+        DebugElementBlock previous = getPrevious();
         int diff;
         if (previous == null) {
             diff = address;
@@ -143,7 +143,7 @@ public abstract class DebugElement extends FixedDexContainerWithTool implements 
         this.address = address;
         return true;
     }
-    private DebugElement getPrevious() {
+    private DebugElementBlock getPrevious() {
         int index = getIndex();
         if (index <= 0) {
             return null;
@@ -154,7 +154,7 @@ public abstract class DebugElement extends FixedDexContainerWithTool implements 
         }
         return null;
     }
-    private DebugElement getNext() {
+    private DebugElementBlock getNext() {
         int index = getIndex();
         if (index < 0) {
             return null;
@@ -179,7 +179,7 @@ public abstract class DebugElement extends FixedDexContainerWithTool implements 
     private DebugAdvancePc getDebugAdvancePc() {
         DebugSequence debugSequence = getDebugSequence();
         if (debugSequence != null) {
-            DebugElement element = debugSequence.get(getIndex() - 1);
+            DebugElementBlock element = debugSequence.get(getIndex() - 1);
             if (element instanceof DebugAdvanceLine) {
                 element = debugSequence.get(element.getIndex() - 1);
             }
@@ -228,7 +228,7 @@ public abstract class DebugElement extends FixedDexContainerWithTool implements 
     public SmaliDirective getSmaliDirective() {
         return getElementType().getSmaliDirective();
     }
-    void cacheValues(DebugSequence debugSequence, DebugElement previous) {
+    void cacheValues(DebugSequence debugSequence, DebugElementBlock previous) {
         int line;
         int address;
         if (previous == null) {
@@ -243,7 +243,7 @@ public abstract class DebugElement extends FixedDexContainerWithTool implements 
         this.address = address;
         this.lineNumber = line;
     }
-    void updateValues(DebugSequence debugSequence, DebugElement previous) {
+    void updateValues(DebugSequence debugSequence, DebugElementBlock previous) {
         if (previous == this) {
             return;
         }
@@ -272,7 +272,7 @@ public abstract class DebugElement extends FixedDexContainerWithTool implements 
         if (diff == 0) {
             return;
         }
-        DebugElement prev = debugSequence.get(getIndex() - 1);
+        DebugElementBlock prev = debugSequence.get(getIndex() - 1);
         if (prev == null) {
             debugSequence.setLineStart(debugSequence.getLineStart() + diff);
             return;
@@ -290,7 +290,7 @@ public abstract class DebugElement extends FixedDexContainerWithTool implements 
         if (diff == 0) {
             return;
         }
-        DebugElement next = debugSequence.get(getIndex() + 1);
+        DebugElementBlock next = debugSequence.get(getIndex() + 1);
         if (next == null) {
             return;
         }
@@ -329,24 +329,24 @@ public abstract class DebugElement extends FixedDexContainerWithTool implements 
         if (other == this) {
             return 0;
         }
-        if (!(other instanceof DebugElement)) {
+        if (!(other instanceof DebugElementBlock)) {
             return ExtraLine.super.compareExtraLine(other);
         }
-        DebugElement element = (DebugElement) other;
+        DebugElementBlock element = (DebugElementBlock) other;
         return CompareUtil.compare(getIndex(), element.getIndex());
     }
 
     public Iterator<IdItem> usedIds() {
         return EmptyIterator.of();
     }
-    public void merge(DebugElement element) {
+    public void merge(DebugElementBlock element) {
         this.elementType.set(element.elementType.getByte());
     }
     public void fromSmali(Smali smali) {
         setTargetAddress(((SmaliDebugElement) smali).getAddress());
     }
 
-    public int compareElement(DebugElement element) {
+    public int compareElement(DebugElementBlock element) {
         int i = CompareUtil.compare(getFlag(), element.getFlag());
         if (i != 0) {
             return i;
@@ -357,7 +357,7 @@ public abstract class DebugElement extends FixedDexContainerWithTool implements 
         }
         return compareDetailElement(element);
     }
-    int compareDetailElement(DebugElement element) {
+    int compareDetailElement(DebugElementBlock element) {
         return 0;
     }
     @Override
@@ -368,7 +368,7 @@ public abstract class DebugElement extends FixedDexContainerWithTool implements 
         if (obj == null || getClass() != obj.getClass()) {
             return false;
         }
-        DebugElement element = (DebugElement) obj;
+        DebugElementBlock element = (DebugElementBlock) obj;
         return elementType.getByte() == element.elementType.getByte();
     }
     @Override

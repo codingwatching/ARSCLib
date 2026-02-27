@@ -15,14 +15,25 @@
  */
 package com.reandroid.dex.debug;
 
-public class DebugEndLocal extends DebugRegisterNumber {
+import com.reandroid.dex.smali.model.Smali;
+import com.reandroid.dex.smali.model.SmaliDebugEpilogue;
 
-    public DebugEndLocal() {
-        super(0, DebugElementType.END_LOCAL);
+public class DebugEpilogueBlock extends DebugElementBlock {
+
+    public DebugEpilogueBlock() {
+        super(DebugElementType.EPILOGUE);
     }
 
     @Override
-    public DebugElementType<DebugEndLocal> getElementType() {
-        return DebugElementType.END_LOCAL;
+    public void fromSmali(Smali smali) {
+        super.fromSmali(smali);
+        if(!(smali instanceof SmaliDebugEpilogue)){
+            throw new ClassCastException("Mismatch class: " + smali.getClass() +
+                    ", expecting: " + SmaliDebugEpilogue.class);
+        }
+    }
+    @Override
+    public DebugElementType<DebugEpilogueBlock> getElementType() {
+        return DebugElementType.EPILOGUE;
     }
 }

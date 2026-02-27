@@ -21,9 +21,9 @@ import com.reandroid.dex.common.Register;
 import com.reandroid.dex.common.RegisterFormat;
 import com.reandroid.dex.common.RegisterType;
 import com.reandroid.dex.data.InstructionList;
-import com.reandroid.dex.debug.DebugElement;
+import com.reandroid.dex.debug.DebugElementBlock;
 import com.reandroid.dex.debug.DebugElementType;
-import com.reandroid.dex.debug.DebugLineNumber;
+import com.reandroid.dex.debug.DebugLineNumberBlock;
 import com.reandroid.dex.debug.DebugSequence;
 import com.reandroid.dex.id.FieldId;
 import com.reandroid.dex.id.IdItem;
@@ -642,7 +642,7 @@ public class DexInstruction extends DexCode {
         Iterator<ExtraLine> iterator = getIns().getForcedExtraLines();
         while (iterator.hasNext()) {
             ExtraLine label = iterator.next();
-            if (!(label instanceof DebugElement)) {
+            if (!(label instanceof DebugElementBlock)) {
                 return true;
             }
         }
@@ -717,14 +717,14 @@ public class DexInstruction extends DexCode {
         return 0;
     }
     public Integer lineNumber() {
-        DebugLineNumber lineNumber = CollectionUtil.getLast(debugLineNumbers());
+        DebugLineNumberBlock lineNumber = CollectionUtil.getLast(debugLineNumbers());
         if (lineNumber != null) {
             return lineNumber.getLineNumber();
         }
         return null;
     }
     public boolean hasLineNumber(int line) {
-        Iterator<DebugLineNumber> iterator = debugLineNumbers();
+        Iterator<DebugLineNumberBlock> iterator = debugLineNumbers();
         while (iterator.hasNext()) {
             if (iterator.next().getLineNumber() == line) {
                 return true;
@@ -734,11 +734,11 @@ public class DexInstruction extends DexCode {
     }
     public Iterator<Integer> getLineNumbers() {
         return ComputeIterator.of(debugLineNumbers(),
-                DebugLineNumber::getLineNumber);
+                DebugLineNumberBlock::getLineNumber);
     }
     public void setLineNumber(int line) {
         Ins ins = edit();
-        DebugLineNumber lineNumber = CollectionUtil.getLast(debugLineNumbers());
+        DebugLineNumberBlock lineNumber = CollectionUtil.getLast(debugLineNumbers());
         if (lineNumber == null) {
             DebugSequence debugSequence = getDexMethod().getDefinition().getOrCreateDebugSequence();
             lineNumber = debugSequence.createNext(DebugElementType.LINE_NUMBER);
@@ -747,9 +747,9 @@ public class DexInstruction extends DexCode {
         }
         lineNumber.setLineNumber(line);
     }
-    private Iterator<DebugLineNumber> debugLineNumbers() {
+    private Iterator<DebugLineNumberBlock> debugLineNumbers() {
         if (getDexMethod().hasDebugSequence()) {
-            return getIns().getForcedExtraLines(DebugLineNumber.class);
+            return getIns().getForcedExtraLines(DebugLineNumberBlock.class);
         }
         return EmptyIterator.of();
     }

@@ -15,14 +15,14 @@
  */
 package com.reandroid.dex.debug;
 
-public class DebugRestartLocal extends DebugRegisterNumber {
+public class DebugRestartLocalBlock extends DebugRegisterNumber {
 
-    public DebugRestartLocal() {
+    public DebugRestartLocalBlock() {
         super(0, DebugElementType.RESTART_LOCAL);
     }
 
     @Override
-    public DebugElementType<DebugRestartLocal> getElementType() {
+    public DebugElementType<DebugRestartLocalBlock> getElementType() {
         return DebugElementType.RESTART_LOCAL;
     }
 }

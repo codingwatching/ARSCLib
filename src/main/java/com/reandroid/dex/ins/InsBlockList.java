@@ -19,10 +19,9 @@ import com.reandroid.arsc.container.BlockList;
 import com.reandroid.arsc.io.BlockReader;
 import com.reandroid.arsc.item.AlignItem;
 import com.reandroid.arsc.item.IntegerReference;
-import com.reandroid.dex.base.DexException;
 import com.reandroid.dex.data.InstructionList;
 import com.reandroid.dex.data.MethodDef;
-import com.reandroid.dex.debug.DebugElement;
+import com.reandroid.dex.debug.DebugElementBlock;
 import com.reandroid.utils.NumbersUtil;
 import com.reandroid.utils.ObjectsUtil;
 import com.reandroid.utils.collection.CombiningIterator;
@@ -200,7 +199,7 @@ public class InsBlockList extends BlockList<Ins> {
                 continue;
             }
             int address = extraLine.getTargetAddress();
-            if(extraLine instanceof DebugElement) {
+            if(extraLine instanceof DebugElementBlock) {
                 if(address < 0 || address >= length || map[address] == null) {
                     continue;
                 }
