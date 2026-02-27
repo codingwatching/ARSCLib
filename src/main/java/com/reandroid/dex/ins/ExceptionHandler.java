@@ -20,6 +20,9 @@ import com.reandroid.dex.id.TypeId;
 import com.reandroid.dex.data.FixedDexContainerWithTool;
 import com.reandroid.dex.data.InstructionList;
 import com.reandroid.dex.key.TypeKey;
+import com.reandroid.dex.program.InstructionLabel;
+import com.reandroid.dex.program.InstructionLabelSet;
+import com.reandroid.dex.program.InstructionLabelType;
 import com.reandroid.dex.smali.SmaliDirective;
 import com.reandroid.dex.smali.SmaliRegion;
 import com.reandroid.dex.smali.SmaliWriter;
@@ -35,7 +38,7 @@ import java.io.IOException;
 import java.util.Iterator;
 
 public abstract class ExceptionHandler extends FixedDexContainerWithTool
-        implements SmaliRegion, Iterable<Label>, LabelsSet {
+        implements SmaliRegion, Iterable<Label>, InstructionLabelSet {
 
     private final Ule128Item catchAddress;
 
@@ -301,7 +304,7 @@ public abstract class ExceptionHandler extends FixedDexContainerWithTool
             if (targetIns != this.targetIns) {
                 this.targetIns = targetIns;
                 if (targetIns != null) {
-                    targetIns.addExtraLine(this);
+                    targetIns.addReferenceLabel(this);
                 }
             }
         }
@@ -328,6 +331,15 @@ public abstract class ExceptionHandler extends FixedDexContainerWithTool
         public void setTargetAddress(int targetAddress) {
             getHandler().setAddress(targetAddress);
         }
+
+        @Override
+        public InstructionLabelType getLabelType() {
+            if (getHandler().isCatchAll()) {
+                return InstructionLabelType.CATCH_ALL_HANDLER;
+            }
+            return InstructionLabelType.CATCH_HANDLER;
+        }
+
         @Override
         public void updateTarget() {
             getHandler().refreshAddresses();
@@ -342,7 +354,7 @@ public abstract class ExceptionHandler extends FixedDexContainerWithTool
             builder.append(' ');
             TypeId typeId = handler.getTypeId();
             if (typeId != null) {
-                builder.append(typeId.getName());
+                builder.append(typeId.getKey());
                 builder.append(' ');
             }
             builder.append("{");
@@ -359,7 +371,7 @@ public abstract class ExceptionHandler extends FixedDexContainerWithTool
             return ExtraLine.ORDER_EXCEPTION_HANDLER;
         }
         @Override
-        public boolean isEqualExtraLine(Object obj) {
+        public boolean equalsLabel(Object obj) {
             if (obj == this) {
                 return true;
             }
@@ -376,7 +388,20 @@ public abstract class ExceptionHandler extends FixedDexContainerWithTool
         }
 
         @Override
-        public void appendExtra(SmaliWriter writer) throws IOException {
+        public int compareLabel(InstructionLabel label) {
+            if (label == this) {
+                return 0;
+            }
+            int i = InstructionLabel.compareLabels(this, label);
+            if (i == 0) {
+                HandlerLabel handlerLabel = (HandlerLabel) label;
+                i = this.getHandler().compareHandler(handlerLabel.getHandler());
+            }
+            return i;
+        }
+
+        @Override
+        public void appendLabels(SmaliWriter writer) throws IOException {
             ExceptionHandler handler = this.getHandler();
             handler.getSmaliDirective().append(writer);
             TypeId typeId = handler.getTypeId();
@@ -416,6 +441,11 @@ public abstract class ExceptionHandler extends FixedDexContainerWithTool
             getHandler().setStartAddress(targetAddress);
         }
         @Override
+        public InstructionLabelType getLabelType() {
+            return InstructionLabelType.TRY_START;
+        }
+
+        @Override
         public String getLabelName() {
             return HexUtil.toHex(":try_start_", getTargetAddress(), 1);
         }
@@ -426,7 +456,7 @@ public abstract class ExceptionHandler extends FixedDexContainerWithTool
         }
 
         @Override
-        public boolean isEqualExtraLine(Object obj) {
+        public boolean equalsLabel(Object obj) {
             if (obj == this) {
                 return true;
             }
@@ -464,6 +494,11 @@ public abstract class ExceptionHandler extends FixedDexContainerWithTool
             getHandler().setAddress(targetAddress);
         }
         @Override
+        public InstructionLabelType getLabelType() {
+            return InstructionLabelType.TRY_END;
+        }
+
+        @Override
         public String getLabelName() {
             int startAddress = getHandler().getStartLabel().getTargetAddress();
             return HexUtil.toHex(":try_end_", startAddress, 1);
@@ -474,7 +509,7 @@ public abstract class ExceptionHandler extends FixedDexContainerWithTool
             return ExtraLine.ORDER_TRY_END;
         }
         @Override
-        public boolean isEqualExtraLine(Object obj) {
+        public boolean equalsLabel(Object obj) {
             if (obj == this) {
                 return true;
             }
@@ -515,12 +550,21 @@ public abstract class ExceptionHandler extends FixedDexContainerWithTool
         public String getLabelName() {
             return HexUtil.toHex(":" + getHandler().getSmaliDirective().getName() + "_", getTargetAddress(), 1);
         }
+
+        @Override
+        public InstructionLabelType getLabelType() {
+            if (getHandler().isCatchAll()) {
+                return InstructionLabelType.CATCH_ALL;
+            }
+            return InstructionLabelType.CATCH;
+        }
+
         @Override
         public int getSortOrder() {
             return ExtraLine.ORDER_CATCH;
         }
         @Override
-        public boolean isEqualExtraLine(Object obj) {
+        public boolean equalsLabel(Object obj) {
             if (obj == this) {
                 return true;
             }
@@ -550,6 +594,19 @@ public abstract class ExceptionHandler extends FixedDexContainerWithTool
                 return i;
             }
             return getLabelName().compareTo(label.getLabelName());
+        }
+
+        @Override
+        public int compareLabel(InstructionLabel label) {
+            if (label == this) {
+                return 0;
+            }
+            int i = InstructionLabel.compareLabels(this, label);
+            if (i == 0) {
+                CatchLabel catchLabel = (CatchLabel) label;
+                i = getHandler().compareHandler(catchLabel.getHandler());
+            }
+            return i;
         }
 
         @Override

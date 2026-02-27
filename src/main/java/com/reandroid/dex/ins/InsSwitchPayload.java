@@ -19,6 +19,7 @@ import com.reandroid.arsc.item.IntegerReference;
 import com.reandroid.dex.common.Register;
 import com.reandroid.dex.common.RegistersTable;
 import com.reandroid.dex.data.InstructionList;
+import com.reandroid.dex.program.InstructionLabelSet;
 import com.reandroid.dex.smali.SmaliFormat;
 import com.reandroid.dex.smali.SmaliRegion;
 import com.reandroid.utils.ObjectsUtil;
@@ -27,7 +28,7 @@ import java.util.Iterator;
 import java.util.List;
 
 public abstract class InsSwitchPayload<T extends SwitchEntry> extends PayloadData<T>
-        implements LabelsSet, SmaliRegion, SmaliFormat {
+        implements InstructionLabelSet, SmaliRegion, SmaliFormat {
 
     private InsSwitch insSwitch;
 
@@ -87,14 +88,14 @@ public abstract class InsSwitchPayload<T extends SwitchEntry> extends PayloadDat
                     + "' vs '" + insSwitch.getOpcode() + "'");
         } else {
             this.insSwitch = insSwitch;
-            addExtraLine(insSwitch);
+            addReferenceLabel(insSwitch);
             insSwitch.setPayload(this);
         }
     }
     public abstract Opcode<? extends InsSwitch> getSwitchOpcode();
 
     private InsSwitch findOnExtraLines() {
-        Iterator<ExtraLine> iterator = getExtraLines();
+        Iterator<ExtraLine> iterator = getReferenceLabels();
         while (iterator.hasNext()){
             ExtraLine extraLine = iterator.next();
             if(extraLine instanceof InsSwitch){

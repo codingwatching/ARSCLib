@@ -16,6 +16,7 @@
 package com.reandroid.dex.ins;
 
 import com.reandroid.arsc.item.IntegerReference;
+import com.reandroid.dex.program.InstructionLabelType;
 import com.reandroid.dex.smali.SmaliWriter;
 import com.reandroid.dex.smali.model.SmaliSparseSwitchEntry;
 import com.reandroid.utils.HexUtil;
@@ -74,7 +75,7 @@ public class SparseSwitchEntry implements SwitchEntry {
         if (targetIns != ins) {
             entryKey.setTargetIns(targetIns);
             if (targetIns != null) {
-                targetIns.addExtraLine(this);
+                targetIns.addReferenceLabel(this);
             }
         }
     }
@@ -115,6 +116,11 @@ public class SparseSwitchEntry implements SwitchEntry {
     }
 
     @Override
+    public InstructionLabelType getLabelType() {
+        return InstructionLabelType.S_SWITCH;
+    }
+
+    @Override
     public String getLabelName() {
         return HexUtil.toHex(":sswitch_", getTargetAddress(), 1);
     }
@@ -130,7 +136,7 @@ public class SparseSwitchEntry implements SwitchEntry {
     }
 
     @Override
-    public void appendExtra(SmaliWriter writer) throws IOException {
+    public void appendLabels(SmaliWriter writer) throws IOException {
         writer.appendLabelName(getLabelName());
         writer.appendComment(HexUtil.toSignedHex(get()));
     }
@@ -144,7 +150,7 @@ public class SparseSwitchEntry implements SwitchEntry {
         Ins ins = packedSwitchEntry.getTargetIns();
         this.setTargetAddress(ins.getAddress());
         this.setTargetIns(ins);
-        ins.addExtraLine(this);
+        ins.addReferenceLabel(this);
     }
 
     public void merge(SparseSwitchEntry data) {

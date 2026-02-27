@@ -81,8 +81,8 @@ public class DebugSetSourceFileBlock extends DebugElementBlock {
     }
 
     @Override
-    public void appendExtra(SmaliWriter writer) throws IOException {
-        super.appendExtra(writer);
+    public void appendLabels(SmaliWriter writer) throws IOException {
+        super.appendLabels(writer);
         this.mName.append(writer);
     }
 

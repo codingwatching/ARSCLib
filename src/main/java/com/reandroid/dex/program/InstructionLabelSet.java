@@ -13,22 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.reandroid.dex.smali.model;
+package com.reandroid.dex.program;
 
-import com.reandroid.dex.debug.DebugElement;
-import com.reandroid.dex.debug.DebugElementType;
-import com.reandroid.dex.program.InstructionLabelType;
-import com.reandroid.dex.smali.SmaliDirective;
+import java.util.Iterator;
 
-public abstract class SmaliDebugElement extends SmaliDebug implements DebugElement {
-
-    public SmaliDirective getSmaliDirective() {
-        return getDebugElementType().getSmaliDirective();
-    }
-    public abstract DebugElementType<?> getDebugElementType();
-
-    @Override
-    public InstructionLabelType getLabelType() {
-        return InstructionLabelType.DEBUG;
-    }
+public interface InstructionLabelSet {
+    Iterator<? extends InstructionLabel> getLabels();
 }

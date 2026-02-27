@@ -27,6 +27,7 @@ import com.reandroid.dex.data.FixedDexContainerWithTool;
 import com.reandroid.dex.data.InstructionList;
 import com.reandroid.dex.id.IdItem;
 import com.reandroid.dex.key.Key;
+import com.reandroid.dex.program.InstructionLabelSet;
 import com.reandroid.dex.smali.model.SmaliCodeTryItem;
 import com.reandroid.utils.collection.EmptyIterator;
 import com.reandroid.utils.collection.ExpandIterator;
@@ -38,7 +39,7 @@ import java.util.Iterator;
 import java.util.Objects;
 
 public class TryBlock extends FixedDexContainerWithTool implements
-        Creator<TryItem>, Iterable<TryItem>, LabelsSet, IdUsageIterator {
+        Creator<TryItem>, Iterable<TryItem>, InstructionLabelSet, IdUsageIterator {
 
     private final CodeItem codeItem;
     private HandlerOffsetArray handlerOffsetArray;

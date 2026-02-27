@@ -21,6 +21,9 @@ import com.reandroid.dex.common.OperandType;
 import com.reandroid.dex.common.RegisterFormat;
 import com.reandroid.dex.id.IdItem;
 import com.reandroid.dex.key.TypeKey;
+import com.reandroid.dex.program.InstructionOpcode;
+import com.reandroid.dex.program.Opcodes;
+import com.reandroid.dex.program.ProgramType;
 import com.reandroid.dex.sections.SectionType;
 import com.reandroid.dex.smali.SmaliFormat;
 import com.reandroid.dex.smali.SmaliReader;
@@ -32,7 +35,7 @@ import com.reandroid.utils.collection.CombiningIterator;
 import java.io.IOException;
 import java.util.*;
 
-public class Opcode<T extends Ins> implements BlockCreator<T>, SmaliFormat {
+public class Opcode<T extends Ins> implements InstructionOpcode, BlockCreator<T>, SmaliFormat {
 
     private static final Opcode<?>[] VALUES;
     private static final Opcode<?>[] PAYLOADS;
@@ -308,6 +311,8 @@ public class Opcode<T extends Ins> implements BlockCreator<T>, SmaliFormat {
     public static final Opcode<Ins21c> CONST_METHOD_HANDLE;
 
     public static final Opcode<Ins22cs> IGET_BYTE_QUICK;
+
+    public static final Opcodes<Opcode<?>> OPCODES;
 
     static {
 
@@ -950,6 +955,28 @@ public class Opcode<T extends Ins> implements BlockCreator<T>, SmaliFormat {
             map.put(opcode.name, opcode);
         }
 
+        OPCODES = new Opcodes<Opcode<?>>() {
+            @Override
+            public Opcode<?> get(int value) {
+                return Opcode.valueOf(value);
+            }
+            @Override
+            public Opcode<?> get(String name) {
+                return Opcode.valueOf(name);
+            }
+            @Override
+            public Iterator<Opcode<?>> iterator() {
+                return Opcode.values();
+            }
+            @Override
+            public int count() {
+                return 0;
+            }
+            @Override
+            public ProgramType programType() {
+                return ProgramType.DEX;
+            }
+        };
     }
 
     private final int value;
@@ -964,15 +991,22 @@ public class Opcode<T extends Ins> implements BlockCreator<T>, SmaliFormat {
         this.opcodeFormat = opcodeFormat;
     }
 
-    public int getValue() {
-        return value;
-    }
     public int size() {
         return size;
     }
+    @Override
+    public int getValue() {
+        return value;
+    }
+    @Override
     public String getName() {
         return name;
     }
+    @Override
+    public ProgramType programType() {
+        return ProgramType.DEX;
+    }
+
     public boolean hasOutRegisters() {
         return getRegisterFormat().isOut();
     }

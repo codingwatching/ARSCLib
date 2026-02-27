@@ -16,6 +16,7 @@
 package com.reandroid.dex.ins;
 
 import com.reandroid.arsc.item.IntegerItem;
+import com.reandroid.dex.program.InstructionLabelType;
 import com.reandroid.dex.smali.SmaliWriter;
 import com.reandroid.dex.smali.model.SmaliPackedSwitchEntry;
 import com.reandroid.utils.HexUtil;
@@ -45,7 +46,7 @@ public class PackedSwitchEntry extends IntegerItem implements SwitchEntry {
         if (targetIns != this.targetIns) {
             this.targetIns = targetIns;
             if (targetIns != null) {
-                targetIns.addExtraLine(this);
+                targetIns.addReferenceLabel(this);
             }
         }
     }
@@ -77,7 +78,7 @@ public class PackedSwitchEntry extends IntegerItem implements SwitchEntry {
     }
 
     @Override
-    public void appendExtra(SmaliWriter writer) throws IOException {
+    public void appendLabels(SmaliWriter writer) throws IOException {
         writer.appendLabelName(getLabelName());
         writer.appendComment(HexUtil.toSignedHex(get()));
     }
@@ -99,6 +100,11 @@ public class PackedSwitchEntry extends IntegerItem implements SwitchEntry {
     @Override
     public void setTargetAddress(int targetAddress) {
         setAddress(targetAddress - getParentDataList().getBaseAddress());
+    }
+
+    @Override
+    public InstructionLabelType getLabelType() {
+        return InstructionLabelType.P_SWITCH;
     }
 
     @Override

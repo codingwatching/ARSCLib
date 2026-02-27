@@ -19,14 +19,14 @@ import com.reandroid.dex.smali.SmaliWriter;
 
 import java.io.IOException;
 import java.util.Comparator;
-
+// TODO: Redundant, replace by InstructionLabel
 public interface ExtraLine {
     int getTargetAddress();
     void setTargetAddress(int targetAddress);
     Ins getTargetIns();
     void setTargetIns(Ins ins);
-    void appendExtra(SmaliWriter writer) throws IOException;
-    boolean isEqualExtraLine(Object obj);
+    void appendLabels(SmaliWriter writer) throws IOException;
+    boolean equalsLabel(Object obj);
     int getSortOrder();
     boolean isRemoved();
     default void updateTarget() {

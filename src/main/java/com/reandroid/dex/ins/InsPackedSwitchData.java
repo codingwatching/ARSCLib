@@ -18,6 +18,7 @@ package com.reandroid.dex.ins;
 import com.reandroid.arsc.base.Creator;
 import com.reandroid.arsc.item.IntegerItem;
 import com.reandroid.arsc.item.ShortItem;
+import com.reandroid.dex.program.InstructionLabelType;
 import com.reandroid.dex.smali.SmaliDirective;
 import com.reandroid.dex.smali.SmaliWriter;
 import com.reandroid.dex.smali.model.SmaliInstruction;
@@ -116,6 +117,11 @@ public class InsPackedSwitchData extends InsSwitchPayload<PackedSwitchEntry> {
     @Override
     public Iterator<PackedSwitchEntry> getLabels() {
         return elements.getLabels();
+    }
+
+    @Override
+    public InstructionLabelType getLabelType() {
+        return InstructionLabelType.P_SWITCH_DATA;
     }
 
     @Override

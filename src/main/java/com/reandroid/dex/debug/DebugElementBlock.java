@@ -22,6 +22,7 @@ import com.reandroid.dex.id.IdItem;
 import com.reandroid.dex.ins.ExtraLine;
 import com.reandroid.dex.data.FixedDexContainerWithTool;
 import com.reandroid.dex.ins.Ins;
+import com.reandroid.dex.program.InstructionLabelType;
 import com.reandroid.dex.smali.SmaliDirective;
 import com.reandroid.dex.smali.SmaliWriter;
 import com.reandroid.dex.smali.model.Smali;
@@ -32,7 +33,8 @@ import com.reandroid.utils.collection.EmptyIterator;
 import java.io.IOException;
 import java.util.Iterator;
 
-public abstract class DebugElementBlock extends FixedDexContainerWithTool implements ExtraLine {
+public abstract class DebugElementBlock extends FixedDexContainerWithTool implements
+        DebugElement, ExtraLine {
     
     private final ByteItem elementType;
     private int address;
@@ -63,7 +65,7 @@ public abstract class DebugElementBlock extends FixedDexContainerWithTool implem
         if (targetIns != this.targetIns) {
             this.targetIns = targetIns;
             if (targetIns != null) {
-                targetIns.addExtraLine(this);
+                targetIns.addReferenceLabel(this);
             }
         }
     }
@@ -311,13 +313,18 @@ public abstract class DebugElementBlock extends FixedDexContainerWithTool implem
     }
 
     @Override
-    public void appendExtra(SmaliWriter writer) throws IOException {
+    public InstructionLabelType getLabelType() {
+        return InstructionLabelType.DEBUG;
+    }
+
+    @Override
+    public void appendLabels(SmaliWriter writer) throws IOException {
         if (isValid()) {
             getSmaliDirective().append(writer);
         }
     }
     @Override
-    public boolean isEqualExtraLine(Object obj) {
+    public boolean equalsLabel(Object obj) {
         return obj == this;
     }
     @Override
@@ -343,7 +350,7 @@ public abstract class DebugElementBlock extends FixedDexContainerWithTool implem
         this.elementType.set(element.elementType.getByte());
     }
     public void fromSmali(Smali smali) {
-        setTargetAddress(((SmaliDebugElement) smali).getAddress());
+        setTargetAddress(((SmaliDebugElement) smali).getTargetAddress());
     }
 
     public int compareElement(DebugElementBlock element) {

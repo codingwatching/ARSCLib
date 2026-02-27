@@ -15,6 +15,7 @@
  */
 package com.reandroid.dex.ins;
 
+import com.reandroid.dex.program.InstructionLabelType;
 import com.reandroid.dex.smali.SmaliWriter;
 import com.reandroid.utils.HexUtil;
 
@@ -56,6 +57,10 @@ public class Ins21t extends Size4Ins implements RegistersSet, Label {
     @Override
     public void setTargetAddress(int targetAddress){
         setShort(2, targetAddress - getAddress());
+    }
+    @Override
+    public InstructionLabelType getLabelType() {
+        return InstructionLabelType.COND;
     }
     @Override
     public String getLabelName() {

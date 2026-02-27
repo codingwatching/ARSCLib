@@ -35,6 +35,8 @@ import com.reandroid.dex.key.Key;
 import com.reandroid.dex.key.MethodKey;
 import com.reandroid.dex.key.StringKey;
 import com.reandroid.dex.key.TypeKey;
+import com.reandroid.dex.program.Instruction;
+import com.reandroid.dex.program.ProgramType;
 import com.reandroid.dex.sections.SectionType;
 import com.reandroid.dex.smali.SmaliReader;
 import com.reandroid.dex.smali.SmaliWriter;
@@ -52,7 +54,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.function.Predicate;
 
-public class DexInstruction extends DexCode {
+public class DexInstruction extends DexCode implements Instruction {
 
     private final DexMethod dexMethod;
     private Ins mIns;
@@ -90,9 +92,11 @@ public class DexInstruction extends DexCode {
         }
         return false;
     }
+    @Override
     public int getAddress() {
         return getIns().getAddress();
     }
+    @Override
     public int getCodeUnits() {
         return getIns().getCodeUnits();
     }
@@ -573,6 +577,7 @@ public class DexInstruction extends DexCode {
         return ins == null || ins.isRemoved();
     }
 
+    @Override
     public Opcode<?> getOpcode() {
         return getIns().getOpcode();
     }
@@ -879,6 +884,12 @@ public class DexInstruction extends DexCode {
     public void append(SmaliWriter writer) throws IOException {
         getIns().append(writer);
     }
+
+    @Override
+    public ProgramType programType() {
+        return ProgramType.DEX;
+    }
+
     @Override
     public String toString() {
         return getIns().toString();

@@ -362,7 +362,7 @@ public class InstructionList extends FixedBlockContainer implements
         return item;
     }
     public boolean isLonelyInTryCatch(Ins ins){
-        Iterator<ExceptionHandler.TryStartLabel> iterator = ins.getExtraLines(
+        Iterator<ExceptionHandler.TryStartLabel> iterator = ins.getReferenceLabels(
                 ExceptionHandler.TryStartLabel.class);
         if(!iterator.hasNext()) {
             return false;
@@ -399,7 +399,7 @@ public class InstructionList extends FixedBlockContainer implements
         }
         int index = item.getIndex();
         Ins next = get(index + 1);
-        if (next == null && item.hasExtraLines()) {
+        if (next == null && item.hasReferenceLabels()) {
             next = insBlockList.getOrCreateNullInstruction();
         }
         if (next != null) {

@@ -49,9 +49,9 @@ public class DebugStartLocalExtended extends DebugStartLocalBlock {
     }
 
     @Override
-    public void appendExtra(SmaliWriter writer) throws IOException {
+    public void appendLabels(SmaliWriter writer) throws IOException {
         if(isValid()) {
-            super.appendExtra(writer);
+            super.appendLabels(writer);
             writer.append(", ");
             mSignature.append(writer);
         }

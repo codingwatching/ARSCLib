@@ -24,6 +24,7 @@ import com.reandroid.dex.data.MethodDef;
 import com.reandroid.dex.id.IdItem;
 import com.reandroid.dex.key.Key;
 import com.reandroid.dex.key.MethodKey;
+import com.reandroid.dex.program.*;
 import com.reandroid.dex.smali.SmaliFormat;
 import com.reandroid.dex.smali.SmaliWriter;
 import com.reandroid.dex.smali.model.SmaliCodeSet;
@@ -37,7 +38,7 @@ import java.io.IOException;
 import java.io.StringWriter;
 import java.util.Iterator;
 
-public class Ins extends FixedDexContainerWithTool implements SmaliFormat {
+public class Ins extends FixedDexContainerWithTool implements Instruction, SmaliFormat {
 
     private final Opcode<?> opcode;
     private Object extraLineList;
@@ -93,9 +94,9 @@ public class Ins extends FixedDexContainerWithTool implements SmaliFormat {
     }
     public void transferExtraLinesTo(Ins destination) {
         destination.extraLineList = ObjectsStore.addAll(
-                destination.extraLineList, this.getExtraLines());
+                destination.extraLineList, this.getReferenceLabels());
 
-        Iterator<ExtraLine> iterator = destination.getExtraLines();
+        Iterator<ExtraLine> iterator = destination.getReferenceLabels();
         while (iterator.hasNext()) {
             ExtraLine extraLine = iterator.next();
             extraLine.setTargetIns(null);
@@ -105,7 +106,7 @@ public class Ins extends FixedDexContainerWithTool implements SmaliFormat {
         if (target != null && destination instanceof Label) {
             destination.setTargetIns(target);
         }
-        this.clearExtraLines();
+        this.clearReferenceLabels();
     }
     public void replace(Ins ins){
         if(ins == null || ins == this){
@@ -151,8 +152,12 @@ public class Ins extends FixedDexContainerWithTool implements SmaliFormat {
         return opcode == getOpcode();
     }
 
+    @Override
     public Opcode<?> getOpcode() {
         return opcode;
+    }
+    public InstructionLabelType getLabelType() {
+        return InstructionLabelType.INSTRUCTION;
     }
     public RegisterFormat getRegisterFormat() {
         return getOpcode().getRegisterFormat();
@@ -185,7 +190,7 @@ public class Ins extends FixedDexContainerWithTool implements SmaliFormat {
         if(targetIns != null) {
             setTargetIns(null);
         }
-        clearExtraLines();
+        clearReferenceLabels();
     }
     public Ins getTargetIns() {
         Ins targetIns = ensureTargetNotRemoved();
@@ -205,7 +210,7 @@ public class Ins extends FixedDexContainerWithTool implements SmaliFormat {
             this.targetIns = targetIns;
             if(targetIns != null) {
                 ((Label) this).setTargetAddress(targetIns.getAddress());
-                targetIns.addExtraLine((Label) this);
+                targetIns.addReferenceLabel((Label) this);
             }
         }
     }
@@ -231,16 +236,16 @@ public class Ins extends FixedDexContainerWithTool implements SmaliFormat {
         }
         return null;
     }
-    public void addExtraLine(ExtraLine extraLine){
+    public void addReferenceLabel(ExtraLine extraLine){
         if (extraLine != this) {
             this.extraLineList = ObjectsStore.add(this.extraLineList, extraLine);
         }
     }
-    public Iterator<ExtraLine> getExtraLines() {
+    public Iterator<ExtraLine> getReferenceLabels() {
         ObjectsStore.sort(this.extraLineList, ExtraLine.COMPARATOR);
         return ObjectsStore.iterator(this.extraLineList);
     }
-    public<T1> Iterator<T1> getExtraLines(Class<T1> instance) {
+    public<T1> Iterator<T1> getReferenceLabels(Class<T1> instance) {
         ObjectsStore.sort(this.extraLineList, ExtraLine.COMPARATOR);
         return ObjectsStore.iterator(this.extraLineList, instance);
     }
@@ -250,7 +255,7 @@ public class Ins extends FixedDexContainerWithTool implements SmaliFormat {
             return EmptyIterator.of();
         }
         instructionList.linkExtraLines();
-        return getExtraLines();
+        return getReferenceLabels();
     }
     public<T1> Iterator<T1> getForcedExtraLines(Class<T1> instance) {
         InstructionList instructionList = getInstructionList();
@@ -258,26 +263,29 @@ public class Ins extends FixedDexContainerWithTool implements SmaliFormat {
             return EmptyIterator.of();
         }
         instructionList.linkExtraLines();
-        return getExtraLines(instance);
+        return getReferenceLabels(instance);
     }
-    public void clearExtraLines() {
+    public void clearReferenceLabels() {
         extraLineList = ObjectsStore.clear(extraLineList);
     }
-    public boolean hasExtraLines() {
+    public void removeReferenceLabels(InstructionLabel label) {
+        extraLineList = ObjectsStore.remove(extraLineList, label);
+    }
+    public boolean hasReferenceLabels() {
         return !ObjectsStore.isEmpty(extraLineList);
     }
     private void appendExtraLines(SmaliWriter writer) throws IOException {
-        Iterator<ExtraLine> iterator = getExtraLines();
+        Iterator<ExtraLine> iterator = getReferenceLabels();
         ExtraLine extraLine = null;
         boolean hasHandler = false;
         ExtraLine previous = null;
         while (iterator.hasNext()){
             extraLine = iterator.next();
-            if(extraLine.isEqualExtraLine(previous)){
+            if(extraLine.equalsLabel(previous)){
                 continue;
             }
             writer.newLine();
-            extraLine.appendExtra(writer);
+            extraLine.appendLabels(writer);
             if(!hasHandler){
                 hasHandler = extraLine.getSortOrder() == ExtraLine.ORDER_EXCEPTION_HANDLER;
             }
@@ -286,6 +294,11 @@ public class Ins extends FixedDexContainerWithTool implements SmaliFormat {
         if(hasHandler && extraLine.getSortOrder() >= ExtraLine.ORDER_EXCEPTION_HANDLER){
             writer.newLine();
         }
+    }
+
+    @Override
+    public ReferenceLabelSet getReferenceLabelSet() {
+        return null;
     }
 
     public void replaceKeys(Key search, Key replace){
@@ -323,7 +336,7 @@ public class Ins extends FixedDexContainerWithTool implements SmaliFormat {
         if (instruction.getRegisterFormat() != RegisterFormat.NONE) {
             toSmaliRegisters(instruction);
         }
-        if (hasExtraLines() && instruction.getCodeSet() != null) {
+        if (hasReferenceLabels() && instruction.getCodeSet() != null) {
             toSmaliExtraLines(instruction);
         }
         toSmaliOthers(instruction);
@@ -334,14 +347,14 @@ public class Ins extends FixedDexContainerWithTool implements SmaliFormat {
     }
     void toSmaliExtraLines(SmaliInstruction instruction) {
         SmaliCodeSet smaliCodeSet = instruction.getCodeSet();
-        Iterator<Label> iterator = InstanceIterator.of(getExtraLines(),
+        Iterator<Label> iterator = InstanceIterator.of(getReferenceLabels(),
                 Label.class, label -> !(label instanceof ExceptionLabel));
         Label extraLine;
         ExtraLine previous = null;
         int index = smaliCodeSet.indexOf(instruction);
         while (iterator.hasNext()){
             extraLine = iterator.next();
-            if(extraLine.isEqualExtraLine(previous)){
+            if(extraLine.equalsLabel(previous)){
                 continue;
             }
             SmaliLabel smaliLabel = new SmaliLabel();
@@ -368,6 +381,11 @@ public class Ins extends FixedDexContainerWithTool implements SmaliFormat {
     public void appendCode(SmaliWriter writer) throws IOException {
         writer.append(getOpcode().getName());
         writer.append(' ');
+    }
+
+    @Override
+    public ProgramType programType() {
+        return ProgramType.DEX;
     }
 
     @Override

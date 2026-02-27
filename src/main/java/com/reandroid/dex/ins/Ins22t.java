@@ -15,6 +15,7 @@
  */
 package com.reandroid.dex.ins;
 
+import com.reandroid.dex.program.InstructionLabelType;
 import com.reandroid.dex.smali.SmaliWriter;
 import com.reandroid.utils.HexUtil;
 
@@ -50,6 +51,10 @@ public class Ins22t extends Ins22 implements Label {
     @Override
     public void setTargetAddress(int targetAddress){
         setData(targetAddress - getAddress());
+    }
+    @Override
+    public InstructionLabelType getLabelType() {
+        return InstructionLabelType.COND;
     }
     @Override
     public String getLabelName() {

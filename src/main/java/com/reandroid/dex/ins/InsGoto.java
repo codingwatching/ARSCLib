@@ -16,6 +16,7 @@
 package com.reandroid.dex.ins;
 
 import com.reandroid.arsc.item.ByteArray;
+import com.reandroid.dex.program.InstructionLabelType;
 import com.reandroid.dex.smali.SmaliWriter;
 import com.reandroid.utils.HexUtil;
 
@@ -71,6 +72,10 @@ public class InsGoto extends SizeXIns implements Label {
             data = targetAddress - getAddress();
         }
         setData(data);
+    }
+    @Override
+    public InstructionLabelType getLabelType() {
+        return InstructionLabelType.GOTO;
     }
     @Override
     public String getLabelName() {

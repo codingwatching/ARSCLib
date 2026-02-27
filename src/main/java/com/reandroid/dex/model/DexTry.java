@@ -189,12 +189,12 @@ public class DexTry extends DexCode {
         Object previous = null;
         while (handlers.hasNext()){
             ExceptionLabel label = handlers.next().getStartLabel();
-            if(label.isEqualExtraLine(previous)){
+            if(label.equalsLabel(previous)){
                 continue;
             }
             previous = label;
             writer.newLine();
-            label.appendExtra(writer);
+            label.appendLabels(writer);
         }
         writer.indentPlus();
         Iterator<DexInstruction> instructions = getInstructions();
@@ -204,18 +204,18 @@ public class DexTry extends DexCode {
         previous = null;
         while (handlers.hasNext()){
             ExceptionLabel label = handlers.next().getEndLabel();
-            if(label.isEqualExtraLine(previous)){
+            if(label.equalsLabel(previous)){
                 continue;
             }
             previous = label;
             writer.newLine();
-            label.appendExtra(writer);
+            label.appendLabels(writer);
         }
         handlers = tryItem.getExceptionHandlers();
         while (handlers.hasNext()){
             ExceptionLabel label = handlers.next().getHandlerLabel();
             writer.newLine();
-            label.appendExtra(writer);
+            label.appendLabels(writer);
         }
     }
 

@@ -15,19 +15,20 @@
  */
 package com.reandroid.dex.ins;
 
+import com.reandroid.dex.program.InstructionLabel;
 import com.reandroid.dex.smali.SmaliWriter;
 
 import java.io.IOException;
 
-public interface Label extends ExtraLine{
+public interface Label extends InstructionLabel, ExtraLine{
     int getAddress();
     String getLabelName();
     @Override
-    default void appendExtra(SmaliWriter writer) throws IOException {
+    default void appendLabels(SmaliWriter writer) throws IOException {
         writer.appendLabelName(getLabelName());
     }
     @Override
-    default boolean isEqualExtraLine(Object obj) {
+    default boolean equalsLabel(Object obj) {
         if(obj == this){
             return true;
         }

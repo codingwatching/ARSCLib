@@ -22,6 +22,7 @@ import com.reandroid.arsc.item.IntegerReference;
 import com.reandroid.dex.data.InstructionList;
 import com.reandroid.dex.data.MethodDef;
 import com.reandroid.dex.debug.DebugElementBlock;
+import com.reandroid.dex.program.InstructionLabelSet;
 import com.reandroid.utils.NumbersUtil;
 import com.reandroid.utils.ObjectsUtil;
 import com.reandroid.utils.collection.CombiningIterator;
@@ -115,8 +116,8 @@ public class InsBlockList extends BlockList<Ins> {
             @Override
             public Iterator<Label> iterator(Ins element) {
                 Iterator<Label> iterator = null;
-                if(element instanceof LabelsSet) {
-                    iterator = ObjectsUtil.cast(((LabelsSet) element).getLabels());
+                if(element instanceof InstructionLabelSet) {
+                    iterator = ObjectsUtil.cast(((InstructionLabelSet) element).getLabels());
                 }
                 if(element instanceof Label) {
                     Label label = (Label) element;
